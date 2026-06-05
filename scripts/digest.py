@@ -15,8 +15,9 @@ from bs4 import BeautifulSoup
 from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
-GROQ_KEY = os.environ["GROQ_API_KEY"]
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_KEY     = os.environ["GROQ_API_KEY"]
+GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
+NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "")  # optional — NewsAPI free tier
 
 SAST  = timezone(timedelta(hours=2))
 TODAY = datetime.now(SAST).strftime("%A, %d %B %Y")
@@ -26,6 +27,9 @@ FEEDS = [
     # Reuters
     ("Reuters",     "https://feeds.reuters.com/reuters/technologyNews"),
     ("Reuters",     "https://feeds.reuters.com/reuters/businessNews"),
+    ("Reuters",     "https://feeds.reuters.com/reuters/companyNews"),
+    ("Reuters",     "https://feeds.reuters.com/reuters/financialNews"),
+    ("Reuters",     "https://feeds.reuters.com/reuters/mergersNews"),
     # CNBC
     ("CNBC",        "https://www.cnbc.com/id/19854910/device/rss/rss.html"),
     ("CNBC",        "https://www.cnbc.com/id/10000664/device/rss/rss.html"),
@@ -220,11 +224,59 @@ def fetch_full_text(url: str) -> str:
         return ""
 
 
+def fetch_newsapi(cutoff: datetime) -> list[dict]:
+    """Fetch Reuters articles via NewsAPI as a supplement to RSS."""
+    if not NEWS_API_KEY:
+        return []
+    try:
+        params = {
+            "sources": "reuters",
+            "apiKey":  NEWS_API_KEY,
+            "pageSize": 50,
+            "language": "en",
+            "from": cutoff.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        resp = requests.get(
+            "https://newsapi.org/v2/everything",
+            params=params,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        articles = []
+        for a in resp.json().get("articles", []):
+            published = None
+            if a.get("publishedAt"):
+                try:
+                    published = datetime.strptime(
+                        a["publishedAt"], "%Y-%m-%dT%H:%M:%SZ"
+                    ).replace(tzinfo=timezone.utc)
+                except Exception:
+                    pass
+            articles.append({
+                "source":    "Reuters",
+                "title":     a.get("title", ""),
+                "summary":   a.get("description", ""),
+                "link":      a.get("url", ""),
+                "published": published,
+            })
+        return articles
+    except Exception as e:
+        print(f"  NewsAPI error: {e}")
+        return []
+
+
 def fetch_articles() -> tuple[list[dict], list[dict]]:
     """Returns (summary_articles, further_reading_articles)."""
     summaries_pool = []
     further_pool   = []
     cutoff         = get_cutoff()
+
+    # Supplement RSS with NewsAPI Reuters articles
+    newsapi_articles = fetch_newsapi(cutoff)
+
+    all_entries = []  # (source, title, summary, link, published)
+    for a in newsapi_articles:
+        all_entries.append(a)
 
     for source, url in FEEDS:
         feed = feedparser.parse(url)
@@ -243,10 +295,6 @@ def fetch_articles() -> tuple[list[dict], list[dict]]:
             article = {"source": source, "title": title,
                        "summary": summary, "link": link,
                        "published": published}
-
-            # Fully block junk — skip entirely
-            if is_excluded_always(title):
-                continue
 
             # Tier 1: company-specific + financial event + not soft → full summary
             if has_company(text) and has_financial_event(text) and                not is_excluded_summary(title):
