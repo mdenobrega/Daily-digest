@@ -6,6 +6,7 @@ summarises via Google Gemini API, and writes a clean HTML page for GitHub Pages.
 """
 
 import os
+import time
 import feedparser
 import requests
 import json
@@ -320,6 +321,8 @@ def main():
     for i, article in enumerate(articles, 1):
         print(f"  Summarising {i}/{len(articles)}: {article['title'][:60]}...")
         summaries.append(summarise(article))
+        if i < len(articles):
+            time.sleep(15)  # avoid Gemini free tier rate limit
 
     html = build_html(articles, summaries)
 
