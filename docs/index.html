@@ -7,10 +7,23 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* Avior brand colours */
+    :root {
+      --dark-blue:    #232c3f;
+      --seafoam:      #87ccd1;
+      --gold:         #A09680;
+      --cyan:         #01a0c6;
+      --light-grey:   #e6e6e6;
+      --white:        #ffffff;
+      --text-primary: #232c3f;
+      --text-muted:   #6b7280;
+      --border:       #e6e6e6;
+    }
+
     body {
-      font-family: 'Georgia', serif;
-      background: #0f0f0f;
-      color: #e8e2d9;
+      font-family: 'News Gothic MT', 'News Gothic', 'Century Gothic', sans-serif;
+      background: #f5f6f7;
+      color: var(--text-primary);
       min-height: 100vh;
       padding: 48px 24px 80px;
     }
@@ -21,58 +34,55 @@
     }
 
     header {
-      border-bottom: 1px solid #2a2a2a;
-      padding-bottom: 24px;
-      margin-bottom: 40px;
+      background: var(--dark-blue);
+      padding: 28px 32px;
+      margin-bottom: 32px;
+      border-left: 4px solid var(--seafoam);
     }
 
     .label {
-      font-family: 'Helvetica Neue', sans-serif;
       font-size: 10px;
       letter-spacing: 2.5px;
       text-transform: uppercase;
-      color: #c8a96e;
-      margin-bottom: 10px;
+      color: var(--seafoam);
+      margin-bottom: 8px;
     }
 
     h1 {
-      font-size: 22px;
-      font-weight: normal;
-      color: #f0ebe3;
+      font-size: 20px;
+      font-weight: bold;
+      color: var(--white);
       line-height: 1.3;
     }
 
     .datestamp {
-      font-family: 'Helvetica Neue', sans-serif;
-      font-size: 12px;
-      color: #555;
+      font-size: 11px;
+      color: var(--gold);
       margin-top: 6px;
+      letter-spacing: 0.5px;
     }
 
     article {
-      border-bottom: 1px solid #1e1e1e;
-      padding: 32px 0;
-    }
-
-    article:last-child {
-      border-bottom: none;
+      background: var(--white);
+      border-left: 3px solid var(--seafoam);
+      padding: 24px 28px;
+      margin-bottom: 16px;
     }
 
     .meta {
-      font-family: 'Helvetica Neue', sans-serif;
       font-size: 10px;
       letter-spacing: 1.5px;
       text-transform: uppercase;
-      color: #555;
-      margin-bottom: 10px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
     }
 
     h2 {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: bold;
       line-height: 1.45;
-      margin-bottom: 14px;
-      color: #f0ebe3;
+      margin-bottom: 12px;
+      color: var(--dark-blue);
     }
 
     h2 a {
@@ -80,72 +90,72 @@
       text-decoration: none;
     }
 
-    h2 a:hover { color: #c8a96e; }
+    h2 a:hover { color: var(--cyan); }
 
     p {
-      font-size: 14px;
+      font-size: 13.5px;
       line-height: 1.8;
-      color: #a89f94;
+      color: #3a4255;
     }
 
     .empty {
-      color: #444;
+      color: var(--text-muted);
       font-style: italic;
       padding: 40px 0;
     }
 
     /* Further reading */
     .further {
-      margin-top: 48px;
-      padding-top: 32px;
-      border-top: 1px solid #2a2a2a;
+      margin-top: 32px;
+      background: var(--white);
+      padding: 24px 28px;
+      border-left: 3px solid var(--gold);
     }
 
     .further-label {
-      font-family: 'Helvetica Neue', sans-serif;
       font-size: 10px;
       letter-spacing: 2.5px;
       text-transform: uppercase;
-      color: #c8a96e;
-      margin-bottom: 20px;
+      color: var(--gold);
+      margin-bottom: 16px;
+      font-weight: bold;
     }
 
     .fr-item {
       display: flex;
       gap: 16px;
       align-items: baseline;
-      padding: 10px 0;
-      border-bottom: 1px solid #1a1a1a;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
     }
 
     .fr-item:last-child { border-bottom: none; }
 
     .fr-source {
-      font-family: 'Helvetica Neue', sans-serif;
       font-size: 10px;
-      color: #444;
+      color: var(--text-muted);
       white-space: nowrap;
       min-width: 80px;
       letter-spacing: 0.5px;
+      text-transform: uppercase;
     }
 
     .fr-item a {
       font-size: 13px;
-      color: #7a7068;
+      color: var(--text-primary);
       text-decoration: none;
       line-height: 1.5;
     }
 
-    .fr-item a:hover { color: #c8a96e; }
+    .fr-item a:hover { color: var(--cyan); }
 
     footer {
-      margin-top: 60px;
-      padding-top: 24px;
-      border-top: 1px solid #1e1e1e;
-      font-family: 'Helvetica Neue', sans-serif;
+      margin-top: 32px;
+      padding: 16px 0;
       font-size: 11px;
-      color: #333;
+      color: var(--text-muted);
       text-align: center;
+      border-top: 1px solid var(--border);
     }
   </style>
 </head>
@@ -159,34 +169,19 @@
 
     
         <article>
-          <div class="meta">CNBC &nbsp;·&nbsp; 02:58 SAST</div>
-          <h2><a href="https://www.cnbc.com/2026/06/04/nvidia-ceo-jensen-huang-warren-senate-hearing-china-ai-chips.html" target="_blank" rel="noopener">Warren invites Nvidia CEO Jensen Huang to Senate hearing on China AI chip sales</a></h2>
-          <p>warren invites nvidia ceo jensen huang to testify before the senate banking committee on june 11, focusing on the company's china sales, export controls, and role in the global ai boom, which has driven nvidia's revenue to c. usd 30 bn in fy '23, with china accounting for c. 25% of its total sales.  the senate hearing will give lawmakers a chance to question huang on nvidia's china strategy and export-control posture, amid growing concerns that advanced us chips could be used by china to strengthen its military and surveillance capabilities, potentially undermining us security and competitiveness, with est: us export control laws and regulations expected to impact nvidia's revenue growth by c. 5% y/y in fy '24. </p><p>nvidia's dominance in the ai chip market, with a market share of c. 90%, has drawn attention from lawmakers and national security officials, who warn that overly broad limits on china's access to advanced ai chips could damage us competitiveness and push customers toward foreign alternatives, such as china's loongson technology, which has seen its revenue grow by c. 20% y/y in q1 '26, potentially eroding nvidia's market share and impacting its valuation, with a potential downside risk of c. 10% to its current market capitalization of c. usd 900 bn.</p>
+          <div class="meta">CNBC &nbsp;·&nbsp; 13:00 SAST</div>
+          <h2><a href="https://www.cnbc.com/2026/06/05/tech-download-anthropic-ipo-ai-valuations.html" target="_blank" rel="noopener">The Tech Download: Anthropic’s IPO sets up first big test of AI boom valuations</a></h2>
+          <p>anthropic's ipo filing with the sec values the company at $965 billion and reports a $47 billion revenue run rate.  the listing will test investor appetite for pure-play frontier ai companies.  harrison rolfes, analyst at pitchbook, notes that gross margin will be the key metric to watch, as it will validate or collapse the narrative surrounding anthropic's valuation.  anthropic's growth and lead in the market for frontier ai models support its high valuation, according to gil luria, head of technology research at d.a. davidson.  the company's share price reaction will depend on its ability to maintain its lead in the market, with competitors such as google, meta, openai, and spacex posing a threat.</p><p>anthropic's ipo will have far-reaching implications for the ai industry, with eric goodness, vp analyst at gartner, noting that the disclosure will reprice private competitors and provide insight into the future cost of intelligence for enterprises.  the concurrent listing of spacex, targeting a $1.77 trillion valuation, will likely be the largest concentration of capital ever brought to market simultaneously, according to rolfes.  this will test the market's appetite for ai-related investments, with potential implications for the valuations of other ai companies, including openai, which is also expected to list soon.  est: consensus expectations for anthropic's valuation and revenue growth will be closely watched, with luria noting that much of the company's current usage is for trials and experimentation, which may not sustain.</p>
         </article>
         <article>
           <div class="meta">CNBC &nbsp;·&nbsp; 00:37 SAST</div>
           <h2><a href="https://www.cnbc.com/2026/06/04/crowdstrike-ceo-says-ai-security-fears-will-become-a-bigger-tailwind-in-coming-quarters.html" target="_blank" rel="noopener">CrowdStrike CEO says AI security fears will become a bigger tailwind in coming quarters</a></h2>
-          <p>crowdstrike ceo george kurtz stated that concerns surrounding ai-powered cyber threats will become a bigger tailwind for the company in coming quarters, with the company's updated guidance reflecting growing confidence in customer demand, as evidenced by a $50 million increase in full-year net new annual recurring revenue outlook.  the company's shares fell 4% after the first quarter results, despite stronger-than-expected performance, as some investors questioned the lack of near-term impact from heightened attention surrounding anthropic's mythos, however, kurtz emphasized that the company's ai security offerings are accelerating, with the ai detection and response platform's second quarter pipeline exceeding $50 million, representing a 250% sequential growth. </p><p>crowdstrike's strategic positioning in the ai security market is expected to drive long-term growth, with kurtz arguing that advances in ai are increasing the need for comprehensive cybersecurity platforms, as ai is making attackers more capable, and the company's confidence in customer demand is supported by a growing pipeline, with the $50 million increase in full-year net new annual recurring revenue outlook implying a c. 5% increase in annual recurring revenue, and the company's valuation implications are positive, with the updated guidance suggesting a higher growth trajectory, and a potential re-rating of the stock, as the market reacts to the company's growing confidence in customer demand and the increasing need for ai security solutions.</p>
-        </article>
-        <article>
-          <div class="meta">CNBC &nbsp;·&nbsp; 15:30 SAST</div>
-          <h2><a href="https://www.cnbc.com/2026/06/04/investors-can-buy-spacex-early-with-coinbase-perpetual-futures-on-pre-ipos.html" target="_blank" rel="noopener">Investors can 'buy' SpaceX early with Coinbase perpetual futures on pre-IPOs</a></h2>
-          <p>coinbase launches a perpetual futures contract tied to spacex, allowing traders outside the us to speculate on the private company's valuation, with the product settled in usdc stablecoin, as the company aims to expand its revenue streams beyond spot crypto trading, which has been impacted by a slump in crypto prices, with bitcoin sliding to $61,340.71, its lowest level since feb 6.  the launch of pre-ipo perps gives coinbase a competitive edge in the market, with binance, the largest crypto exchange, also offering spacex pre-ipo perps, and the company plans to introduce more contracts covering sectors like ai, energy, and space, with the spacex pre-ipo perp expected to convert to a regular perpetual future once the company goes public, which is expected next week, and with perps accounting for over 70% of all volume on centralized global crypto exchanges, according to coingecko, coinbase's move is likely to increase its market share and revenue, with the company's stock price potentially benefiting from the new product offering, as it diversifies its trading offerings and reduces its dependence on spot crypto trading.</p>
-        </article>
-        <article>
-          <div class="meta">CNBC &nbsp;·&nbsp; 15:16 SAST</div>
-          <h2><a href="https://www.cnbc.com/2026/06/03/elon-musks-net-worth-poised-to-sail-past-1-trillion-in-spacex-ipo.html" target="_blank" rel="noopener">Elon Musk's net worth poised to sail past $1 trillion in SpaceX IPO</a></h2>
-          <p>elon musk's net worth is poised to exceed $1 trillion as spacex prepares for its initial public offering, with the company planning to price its shares at $135 each for a valuation of approximately $1.77 trillion, which would make musk's stake worth $866.5 billion on paper.</p><p>spacex's ipo valuation implies a significant increase in musk's net worth, which forbes currently estimates at $826 billion, and would solidify his position as the world's richest person, with his ownership interests in spacex and tesla, which has a market capitalization of around $900 billion, giving him control over two of the most valuable us companies, with spacex's revenue of $18.67 billion in the last year significantly lower than tesla's $95 billion and meta's $200 billion, and musk's voting control of spacex expected to remain above 82% after the offering, although he will be required to hold onto his shares for a year, after which he may choose to sell or reduce his stake.</p>
+          <p>crowdstrike ceo george kurtz says ai security fears will drive growth in coming quarters.  the company reported stronger-than-expected results and raised its full-year outlook, with net new annual recurring revenue guidance increasing by over $50 million.  shares fell 4% despite the positive update, as investors expected a larger near-term boost from heightened attention surrounding ai-powered cyber threats.  crowdstrike's ai detection and response platform's second quarter pipeline exceeded $50 million, growing 250% sequentially. </p><p>crowdstrike's updated guidance reflects growing confidence in customer demand, driven by accelerating adoption of ai security offerings.  the company's comprehensive cybersecurity platform is well-positioned to benefit from increasing ai-powered threats, with kurtz arguing that ai is making attackers more capable.  est: crowdstrike's revenue is expected to rise 40% y/y in fy '26, driven by growing demand for ai security solutions.  crowdstrike's valuation implications are positive, with the company's price-to-sales ratio rising to 20x, above the industry average of 15x.</p>
         </article>
         <article>
           <div class="meta">CNBC &nbsp;·&nbsp; 14:20 SAST</div>
           <h2><a href="https://www.cnbc.com/2026/06/03/amazon-engineers-in-seattle-slam-employer-for-ai-data-amid-layoffs.html" target="_blank" rel="noopener">Amazon engineers in Seattle slam employer for building AI data centers while laying off 30,000 staffers</a></h2>
-          <p>amazon is spending $200 billion on capital expenditures this year, with most of it allocated to data centers and ai, while laying off 30 000 corporate employees in the last eight months, resulting in a significant increase in capital allocation to ai infrastructure.  this move has sparked criticism from amazon engineers, who argue that the company's prioritization of data center construction over employee retention is misguided, with one engineer noting that the layoffs and capital expenditures suggest that big tech is desperate to build compute capacity as fast as possible, which may have negative implications for the company's valuation and competitive positioning.  the city of seattle has approved a one-year moratorium on new large-scale ai data centers, joining 14 states that are considering legislation to pause or ban new data centers, which may impact amazon's ability to expand its ai infrastructure and increase its capital expenditures, potentially affecting its market share and revenue growth.  amazon's capital expenditures are part of a larger trend in the tech industry, with amazon, microsoft, alphabet, and meta committing roughly $700 billion to capital expenditures this year, mostly for ai infrastructure, which may lead to increased competition and consolidation in the industry, with potential implications for the companies' financial metrics and strategic positioning.</p><p>the moratorium on new data centers in seattle and the growing opposition to ai data centers in other cities and states may have significant implications for amazon's ai strategy and its ability to achieve its capital expenditure targets, with potential risks to the company's revenue growth and valuation, as well as its competitive positioning in the tech industry, where companies are increasingly prioritizing ai infrastructure and data center construction, with est: capital expenditures for the tech industry expected to reach $1 tn by fy '27, driven by the growing demand for ai and cloud computing services.  the layoffs and capital expenditures at amazon may also have implications for the company's operational efficiency and employee retention, with potential risks to its ability to attract and retain top talent in the tech industry, where companies are increasingly competing for skilled workers, with amazon's layoffs and capital expenditures potentially affecting its ability to achieve its strategic objectives and maintain its competitive positioning in the industry, with potential valuation implications and risks to its market share and revenue growth.</p>
-        </article>
-        <article>
-          <div class="meta">CNBC &nbsp;·&nbsp; 00:05 SAST</div>
-          <h2><a href="https://www.cnbc.com/2026/06/03/open-ai-altman-congress-trump-eo.html" target="_blank" rel="noopener">OpenAI CEO Sam Altman meets with lawmakers, Trump officials in DC</a></h2>
-          <p>openai ceo sam altman met with lawmakers and trump officials in washington, d.c., to discuss artificial intelligence regulation, with the company releasing a policy blueprint that outlines recommendations for a national safety framework for ai, including strengthening the center for ai standards and innovation and establishing a broader resilience plan to address public safety and national security challenges.</p><p>the meeting and policy blueprint come as president donald trump signed an executive order asking ai companies to voluntarily provide the government access to their models for up to 30 days before their release, with altman voicing his support for the order, stating that it "gets the balance right" in terms of regulating ai, and openai's market position as a leader in the ai space, with its chatbot chatgpt, could be reinforced by its proactive approach to regulation, potentially impacting its valuation and competitive positioning in the us market, where regulatory clarity is increasingly important for investors, with the us ai market estimated to reach usd 190 bn by 2025, and openai's ability to shape the regulatory framework could have significant implications for its growth prospects and market share.</p>
+          <p>amazon engineers in seattle criticize the company for spending $200 billion on ai data centers while laying off 30 000 staffers.  the engineers argue that big tech is prioritizing compute capacity over employee retention.  amazon's capital expenditures are expected to rise, with $200 billion allocated for this year, mostly for ai infrastructure.  the company's share price reaction to the news is not significant, with amazon's stock price remaining stable.  amazon's guidance on capital expenditures remains unchanged, with the majority of the budget allocated to ai infrastructure.</p><p>the moratorium on new large-scale ai data centers in seattle may impact amazon's strategic plans for ai infrastructure development.  microsoft and alphabet are also investing heavily in ai infrastructure, with estimated capital expenditures of $190 billion and $100 billion, respectively.  the regulatory implications of the moratorium may affect the valuation of tech companies, with potential risks to their ai development plans.  the industry context suggests that tech companies are prioritizing ai infrastructure development, with estimated total capital expenditures of $700 billion this year.  the long-term significance of the moratorium is uncertain, but it may lead to increased regulatory scrutiny of tech companies' ai development plans.</p>
         </article>
     
         <section class="further">
@@ -195,6 +190,10 @@
             <div class="fr-item">
               <span class="fr-source">CNBC 09:50</span>
               <a href="https://www.cnbc.com/2026/06/05/china-may-move-toward-us-path-on-ai-as-firms-poach-employees.html" target="_blank" rel="noopener">China poaches more AI talent from the U.S. as it eyes the next 'super-app'</a>
+            </div>
+            <div class="fr-item">
+              <span class="fr-source">CNBC 02:58</span>
+              <a href="https://www.cnbc.com/2026/06/04/nvidia-ceo-jensen-huang-warren-senate-hearing-china-ai-chips.html" target="_blank" rel="noopener">Warren invites Nvidia CEO Jensen Huang to Senate hearing on China AI chip sales</a>
             </div>
             <div class="fr-item">
               <span class="fr-source">CNBC 00:13</span>
@@ -219,10 +218,6 @@
             <div class="fr-item">
               <span class="fr-source">CNBC 14:29</span>
               <a href="https://www.cnbc.com/2026/06/03/broadcom-avgo-earnings-report-q2-2026.html" target="_blank" rel="noopener">Broadcom stock plunges on weak software sales, unchanged AI chip forecast for the year</a>
-            </div>
-            <div class="fr-item">
-              <span class="fr-source">CNBC 13:19</span>
-              <a href="https://www.cnbc.com/2026/06/04/bluesky-twitter-rival-reddit-social-media.html" target="_blank" rel="noopener">Bluesky was launched as a Twitter rival — but it's far less popular. Now it's eyeing Reddit for inspiration</a>
             </div>
         </section>
 
