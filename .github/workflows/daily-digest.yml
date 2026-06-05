@@ -1,12 +1,12 @@
-name: Daily Tech & AI Digest
+name: TMT Snapshot
 
 on:
   schedule:
-    - cron: "0 4 * * 1-5"
-  workflow_dispatch:
+    - cron: "0 4 * * 1-5"   # 04:00 UTC = 06:00 SAST, Monday–Friday
+  workflow_dispatch:          # manual trigger from GitHub UI
 
 permissions:
-  contents: write
+  contents: write             # needed to push the generated HTML
 
 jobs:
   build-and-deploy:
@@ -27,7 +27,7 @@ jobs:
 
       - name: Run digest script
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python scripts/digest.py
 
       - name: Commit and push updated digest
