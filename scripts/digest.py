@@ -23,11 +23,22 @@ TODAY = datetime.now(SAST).strftime("%A, %d %B %Y")
 
 # ── RSS feeds ─────────────────────────────────────────────────────────────────
 FEEDS = [
-    ("Reuters", "https://feeds.reuters.com/reuters/technologyNews"),
-    ("Reuters", "https://feeds.reuters.com/reuters/businessNews"),
-    ("CNBC",    "https://www.cnbc.com/id/19854910/device/rss/rss.html"),
-    ("CNBC",    "https://www.cnbc.com/id/10000664/device/rss/rss.html"),
-    ("FT",      "https://www.ft.com/rss/home/technology"),
+    # Reuters
+    ("Reuters",     "https://feeds.reuters.com/reuters/technologyNews"),
+    ("Reuters",     "https://feeds.reuters.com/reuters/businessNews"),
+    # CNBC
+    ("CNBC",        "https://www.cnbc.com/id/19854910/device/rss/rss.html"),
+    ("CNBC",        "https://www.cnbc.com/id/10000664/device/rss/rss.html"),
+    # FT
+    ("FT",          "https://www.ft.com/rss/home/technology"),
+    # Bloomberg Technology
+    ("Bloomberg",   "https://feeds.bloomberg.com/technology/news.rss"),
+    # TechCrunch
+    ("TechCrunch",  "https://techcrunch.com/feed/"),
+    # The Verge
+    ("The Verge",   "https://www.theverge.com/rss/index.xml"),
+    # WSJ Tech
+    ("WSJ",         "https://feeds.a.dj.com/rss/RSSWSJD.xml"),
 ]
 
 # ── Keywords ──────────────────────────────────────────────────────────────────
@@ -158,16 +169,16 @@ MAX_FURTHER   = 8    # articles in further reading
 
 def get_cutoff() -> datetime:
     """
-    Returns start of previous business day in UTC.
-    Monday 2am SAST  → Friday 00:00 SAST (3 days back)
-    Tue–Fri 2am SAST → previous day 00:00 SAST (1 day back)
+    Returns 07:00 SAST of the previous business day in UTC.
+    Monday 6am SAST  → Friday 07:00 SAST (3 days back)
+    Tue–Fri 6am SAST → previous day 07:00 SAST (1 day back)
     """
     now_sast    = datetime.now(SAST)
     weekday     = now_sast.weekday()          # 0=Mon ... 4=Fri
     days_back   = 3 if weekday == 0 else 1
     cutoff_date = now_sast.date() - timedelta(days=days_back)
     cutoff_sast = datetime(cutoff_date.year, cutoff_date.month,
-                           cutoff_date.day, 0, 0, tzinfo=SAST)
+                           cutoff_date.day, 7, 0, tzinfo=SAST)
     return cutoff_sast.astimezone(timezone.utc)
 
 
@@ -376,7 +387,7 @@ def build_html(articles: list[dict], summaries: list[str],
         pub_str = ""
         if article["published"]:
             pub_str = article["published"].astimezone(SAST).strftime("%H:%M SAST")
-        safe_summary = summary.replace("\n\n", "</p><p>").replace("\n", " ")
+        safe_summary = summary.replace("\n\n", '</p><p style="margin-top:14px;">').replace("\n", " ")
         cards += f"""
         <article>
           <div class="meta">{article['source']} &nbsp;·&nbsp; {pub_str}</div>
