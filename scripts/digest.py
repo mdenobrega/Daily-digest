@@ -15,8 +15,8 @@ from bs4 import BeautifulSoup
 from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
-GEMINI_KEY = os.environ["GEMINI_API_KEY"]
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+GROQ_KEY = os.environ["GROQ_API_KEY"]
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 SAST  = timezone(timedelta(hours=2))
 TODAY = datetime.now(SAST).strftime("%A, %d %B %Y")
@@ -190,20 +190,27 @@ def summarise(article: dict) -> str:
     content += f"Article text:\n{body}" if body else f"Summary/excerpt:\n{article['summary']}"
 
     payload = {
-        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "contents": [{"parts": [{"text": content}]}],
-        "generationConfig": {"maxOutputTokens": 600, "temperature": 0.3},
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user",   "content": content},
+        ],
+        "max_tokens": 600,
+        "temperature": 0.3,
     }
 
     try:
         resp = requests.post(
-            f"{GEMINI_URL}?key={GEMINI_KEY}",
-            headers={"Content-Type": "application/json"},
+            GROQ_URL,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {GROQ_KEY}",
+            },
             data=json.dumps(payload),
             timeout=30,
         )
         resp.raise_for_status()
-        return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        return resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
         return f"[Summary unavailable: {e}]"
 
@@ -413,7 +420,7 @@ def build_html(articles: list[dict], summaries: list[str],
     {further_html}
 
     <footer>
-      Generated at 02:00 SAST &nbsp;·&nbsp; Sources: Reuters, CNBC, FT &nbsp;·&nbsp; Summaries via Gemini
+      Generated at 02:00 SAST &nbsp;·&nbsp; Sources: Reuters, CNBC, FT &nbsp;·&nbsp; Summaries via Groq
     </footer>
   </div>
 </body>
