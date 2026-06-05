@@ -73,6 +73,12 @@ EXCLUDE_ALWAYS = [
     "sponsored", "partner content", "presented by", "paid post",
     # Pure listicles
     "obsessing over", "everything you need", "all you need",
+    # CEO personal wealth
+    "net worth", "billionaire", "richest person", "wealthiest",
+    "sail past", "surpasses", "fortune grows",
+    # Crypto / financial instruments on tech stocks
+    "perpetual futures", "coinbase", "pre-ipo", "tokenised",
+    "crypto", "bitcoin", "blockchain", "nft",
 ]
 
 # Summary-only exclusions — too soft for a full summary but fine as further reading
@@ -106,6 +112,11 @@ EXCLUDE_SUMMARY = [
     # Career and culture
     "culture at", "what it's like to work", "employees say", "workers say",
     "best employer", "great place to work",
+    # Political/regulatory meetings without operational news
+    "meets with lawmakers", "meets with senators", "meets with congress",
+    "senate hearing", "invites", "meets trump", "white house meeting",
+    "meets with officials", "washington visit", "dc visit",
+    "meets with lawmakers", "capitol hill",
 ]
 
 MAX_SUMMARIES = 10   # articles that get full summaries
@@ -214,15 +225,21 @@ def fetch_articles() -> tuple[list[dict], list[dict]]:
 
 
 # ── Summarisation ─────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """You are an institutional equity research analyst writing a daily tech and AI news digest for a sophisticated investor audience.
+SYSTEM_PROMPT = """You are Avior's institutional equity research analyst writing a daily tech and AI news digest for a sophisticated investor audience.
 
-For each article, write a concise summary in the style of the Economist and institutional equity research.
+For each article, write a concise summary in the style of the Economist and institutional equity research, following Avior's communications guidelines.
 
 Writing rules:
 - Laconic, direct, analytical. No fluff, no vague wording, no metaphors, no promotional language.
-- Active voice only.
+- Active voice only. Replace passive constructions with direct, authoritative ones.
+- Maximum 20 words per sentence. Start a new sentence rather than using "while the".
 - Prioritise market-moving information and the "why it matters".
 - Every sentence must contain: financial metrics, strategic implications, competitive positioning, valuation implications, industry impact, operational changes, guidance changes, regulatory impact, AI implications, capital allocation, or market reaction.
+- Avoid concentrator words: key, critical, essential, optimise, impact — unless necessary for clarity.
+- Do not use the word "robust" except when describing quantitative results.
+- Do not use unclear antecedents — never use "this" or "that" without specifying the subject.
+- Replace "increased" with "rose" and "decreased" with "fell".
+- No filler phrases like "management remains optimistic" unless backed by data.
 
 Structure (maximum two paragraphs):
 - Para 1: headline event, financial results, guidance, margins, revenue, EPS, bookings, capex, share price reaction, key operational metrics.
@@ -235,11 +252,11 @@ Formatting:
 - bn = billion, m = million, tn = trillion, k = thousand.
 - Spaces for thousands: "10 000" not "10,000".
 - ISO currency codes: USD, EUR, GBP, KRW, JPY, CNY.
-- y/y, q/q, FY '26, Q1 '26.
+- Dates: 15 Sep '19 format. Fiscal year: FY '26. Calendar year: CY '26. Year-to-date: YTD. Year-on-year: y/y.
+- Ratings in full capitals: OUTPERFORM, UNDERPERFORM, MARKET PERFORM.
 - Use "Est:" for consensus expectations.
 - Use "c." for approximate values.
 - No bullet points. No repeated information.
-- No filler phrases like "management remains optimistic" unless backed by data.
 
 If the article lacks enough data for a full two-paragraph summary, write one strong paragraph.
 If the article is behind a paywall with no extractable content, write one sentence noting this."""
@@ -327,10 +344,23 @@ def build_html(articles: list[dict], summaries: list[str],
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
+    /* Avior brand colours */
+    :root {{
+      --dark-blue:    #232c3f;
+      --seafoam:      #87ccd1;
+      --gold:         #A09680;
+      --cyan:         #01a0c6;
+      --light-grey:   #e6e6e6;
+      --white:        #ffffff;
+      --text-primary: #232c3f;
+      --text-muted:   #6b7280;
+      --border:       #e6e6e6;
+    }}
+
     body {{
-      font-family: 'Georgia', serif;
-      background: #0f0f0f;
-      color: #e8e2d9;
+      font-family: 'News Gothic MT', 'News Gothic', 'Century Gothic', sans-serif;
+      background: #f5f6f7;
+      color: var(--text-primary);
       min-height: 100vh;
       padding: 48px 24px 80px;
     }}
@@ -341,58 +371,55 @@ def build_html(articles: list[dict], summaries: list[str],
     }}
 
     header {{
-      border-bottom: 1px solid #2a2a2a;
-      padding-bottom: 24px;
-      margin-bottom: 40px;
+      background: var(--dark-blue);
+      padding: 28px 32px;
+      margin-bottom: 32px;
+      border-left: 4px solid var(--seafoam);
     }}
 
     .label {{
-      font-family: 'Helvetica Neue', sans-serif;
       font-size: 10px;
       letter-spacing: 2.5px;
       text-transform: uppercase;
-      color: #c8a96e;
-      margin-bottom: 10px;
+      color: var(--seafoam);
+      margin-bottom: 8px;
     }}
 
     h1 {{
-      font-size: 22px;
-      font-weight: normal;
-      color: #f0ebe3;
+      font-size: 20px;
+      font-weight: bold;
+      color: var(--white);
       line-height: 1.3;
     }}
 
     .datestamp {{
-      font-family: 'Helvetica Neue', sans-serif;
-      font-size: 12px;
-      color: #555;
+      font-size: 11px;
+      color: var(--gold);
       margin-top: 6px;
+      letter-spacing: 0.5px;
     }}
 
     article {{
-      border-bottom: 1px solid #1e1e1e;
-      padding: 32px 0;
-    }}
-
-    article:last-child {{
-      border-bottom: none;
+      background: var(--white);
+      border-left: 3px solid var(--seafoam);
+      padding: 24px 28px;
+      margin-bottom: 16px;
     }}
 
     .meta {{
-      font-family: 'Helvetica Neue', sans-serif;
       font-size: 10px;
       letter-spacing: 1.5px;
       text-transform: uppercase;
-      color: #555;
-      margin-bottom: 10px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
     }}
 
     h2 {{
-      font-size: 16px;
+      font-size: 15px;
       font-weight: bold;
       line-height: 1.45;
-      margin-bottom: 14px;
-      color: #f0ebe3;
+      margin-bottom: 12px;
+      color: var(--dark-blue);
     }}
 
     h2 a {{
@@ -400,72 +427,72 @@ def build_html(articles: list[dict], summaries: list[str],
       text-decoration: none;
     }}
 
-    h2 a:hover {{ color: #c8a96e; }}
+    h2 a:hover {{ color: var(--cyan); }}
 
     p {{
-      font-size: 14px;
+      font-size: 13.5px;
       line-height: 1.8;
-      color: #a89f94;
+      color: #3a4255;
     }}
 
     .empty {{
-      color: #444;
+      color: var(--text-muted);
       font-style: italic;
       padding: 40px 0;
     }}
 
     /* Further reading */
     .further {{
-      margin-top: 48px;
-      padding-top: 32px;
-      border-top: 1px solid #2a2a2a;
+      margin-top: 32px;
+      background: var(--white);
+      padding: 24px 28px;
+      border-left: 3px solid var(--gold);
     }}
 
     .further-label {{
-      font-family: 'Helvetica Neue', sans-serif;
       font-size: 10px;
       letter-spacing: 2.5px;
       text-transform: uppercase;
-      color: #c8a96e;
-      margin-bottom: 20px;
+      color: var(--gold);
+      margin-bottom: 16px;
+      font-weight: bold;
     }}
 
     .fr-item {{
       display: flex;
       gap: 16px;
       align-items: baseline;
-      padding: 10px 0;
-      border-bottom: 1px solid #1a1a1a;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
     }}
 
     .fr-item:last-child {{ border-bottom: none; }}
 
     .fr-source {{
-      font-family: 'Helvetica Neue', sans-serif;
       font-size: 10px;
-      color: #444;
+      color: var(--text-muted);
       white-space: nowrap;
       min-width: 80px;
       letter-spacing: 0.5px;
+      text-transform: uppercase;
     }}
 
     .fr-item a {{
       font-size: 13px;
-      color: #7a7068;
+      color: var(--text-primary);
       text-decoration: none;
       line-height: 1.5;
     }}
 
-    .fr-item a:hover {{ color: #c8a96e; }}
+    .fr-item a:hover {{ color: var(--cyan); }}
 
     footer {{
-      margin-top: 60px;
-      padding-top: 24px;
-      border-top: 1px solid #1e1e1e;
-      font-family: 'Helvetica Neue', sans-serif;
+      margin-top: 32px;
+      padding: 16px 0;
       font-size: 11px;
-      color: #333;
+      color: var(--text-muted);
       text-align: center;
+      border-top: 1px solid var(--border);
     }}
   </style>
 </head>
