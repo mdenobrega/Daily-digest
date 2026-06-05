@@ -27,7 +27,8 @@ jobs:
 
       - name: Run digest script
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
         run: python scripts/digest.py
 
       - name: Commit and push updated digest
