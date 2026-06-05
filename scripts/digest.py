@@ -2,54 +2,41 @@
 Daily Tech & AI News Digest
 Fetches top tech/AI headlines from Reuters, CNBC, FT RSS feeds,
 filters for major company names and market-moving events,
-summarises via Claude API, and emails a clean digest.
+summarises via Claude API, and writes a clean HTML page for GitHub Pages.
 """
 
 import os
-import re
-import smtplib
 import feedparser
 import anthropic
 import requests
 from datetime import datetime, timezone, timedelta
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from bs4 import BeautifulSoup
+from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
-RECIPIENT_EMAIL = "mdenobrega19@gmail.com"
-SENDER_EMAIL    = os.environ["GMAIL_ADDRESS"]      # set in GitHub secrets
-GMAIL_APP_PASS  = os.environ["GMAIL_APP_PASSWORD"] # set in GitHub secrets
-ANTHROPIC_KEY   = os.environ["ANTHROPIC_API_KEY"]  # set in GitHub secrets
+ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
 
 # SAST is UTC+2
-SAST = timezone(timedelta(hours=2))
+SAST  = timezone(timedelta(hours=2))
 TODAY = datetime.now(SAST).strftime("%A, %d %B %Y")
 
 # ── RSS feeds ─────────────────────────────────────────────────────────────────
 FEEDS = [
-    # Reuters
     ("Reuters", "https://feeds.reuters.com/reuters/technologyNews"),
     ("Reuters", "https://feeds.reuters.com/reuters/businessNews"),
-    # CNBC
-    ("CNBC",    "https://www.cnbc.com/id/19854910/device/rss/rss.html"),  # tech
-    ("CNBC",    "https://www.cnbc.com/id/10000664/device/rss/rss.html"),  # earnings
-    # FT (public feed — headlines only, no paywall required)
+    ("CNBC",    "https://www.cnbc.com/id/19854910/device/rss/rss.html"),
+    ("CNBC",    "https://www.cnbc.com/id/10000664/device/rss/rss.html"),
     ("FT",      "https://www.ft.com/rss/home/technology"),
 ]
 
 # ── Filter keywords ───────────────────────────────────────────────────────────
 COMPANY_KEYWORDS = [
-    # Big Tech
     "nvidia", "apple", "microsoft", "google", "alphabet", "meta", "amazon",
     "tesla", "openai", "anthropic", "intel", "amd", "qualcomm", "broadcom",
     "tsmc", "samsung", "asml", "arm", "palantir", "salesforce", "oracle",
     "ibm", "sap", "adobe", "snowflake", "databricks", "huawei",
-    # Hyperscalers / cloud
     "aws", "azure", "gcp", "cloudflare", "datadog",
-    # Social / consumer tech
     "netflix", "spotify", "uber", "lyft", "airbnb", "x.com", "twitter",
-    # Semiconductors
     "micron", "sk hynix", "western digital", "seagate",
 ]
 
@@ -60,31 +47,26 @@ EVENT_KEYWORDS = [
     "antitrust", "fine", "lawsuit", "ceo", "partnership", "deal",
 ]
 
-MAX_ARTICLES = 12   # cap to control API cost
-MAX_AGE_HOURS = 26  # articles published within the last ~26 hours
+MAX_ARTICLES  = 12
+MAX_AGE_HOURS = 26
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def is_relevant(title: str, summary: str) -> bool:
     text = (title + " " + summary).lower()
-    has_company = any(k in text for k in COMPANY_KEYWORDS)
-    has_event   = any(k in text for k in EVENT_KEYWORDS)
-    return has_company and has_event
+    return any(k in text for k in COMPANY_KEYWORDS) and \
+           any(k in text for k in EVENT_KEYWORDS)
 
 
 def fetch_full_text(url: str) -> str:
-    """Best-effort extraction of article body text."""
     try:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; NewsDigestBot/1.0)"}
-        resp = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        # Remove nav, ads, scripts
+        resp    = requests.get(url, headers=headers, timeout=10)
+        soup    = BeautifulSoup(resp.text, "html.parser")
         for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
             tag.decompose()
-        paragraphs = soup.find_all("p")
-        text = " ".join(p.get_text(separator=" ") for p in paragraphs)
-        # Trim to ~3 000 chars to stay within token budget
+        text = " ".join(p.get_text(separator=" ") for p in soup.find_all("p"))
         return text[:3000].strip()
     except Exception:
         return ""
@@ -92,16 +74,14 @@ def fetch_full_text(url: str) -> str:
 
 def fetch_articles() -> list[dict]:
     articles = []
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=MAX_AGE_HOURS)
+    cutoff   = datetime.now(timezone.utc) - timedelta(hours=MAX_AGE_HOURS)
 
     for source, url in FEEDS:
         feed = feedparser.parse(url)
         for entry in feed.entries:
-            # Parse published date
             published = None
             if hasattr(entry, "published_parsed") and entry.published_parsed:
                 published = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-
             if published and published < cutoff:
                 continue
 
@@ -111,26 +91,21 @@ def fetch_articles() -> list[dict]:
 
             if not is_relevant(title, summary):
                 continue
-
-            # Avoid duplicates by title similarity
             if any(a["title"].lower()[:60] == title.lower()[:60] for a in articles):
                 continue
 
-            articles.append({
-                "source":    source,
-                "title":     title,
-                "summary":   summary,
-                "link":      link,
-                "published": published,
-            })
+            articles.append({"source": source, "title": title,
+                              "summary": summary, "link": link,
+                              "published": published})
 
-    # Sort by recency, cap at MAX_ARTICLES
-    articles.sort(key=lambda x: x["published"] or datetime.min.replace(tzinfo=timezone.utc),
-                  reverse=True)
+    articles.sort(
+        key=lambda x: x["published"] or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
     return articles[:MAX_ARTICLES]
 
 
-# ── Summarisation prompt ──────────────────────────────────────────────────────
+# ── Summarisation ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are an institutional equity research analyst writing a daily tech and AI news digest for a sophisticated investor audience.
 
 For each article, write a concise summary in the style of the Economist and institutional equity research.
@@ -155,22 +130,17 @@ Formatting:
 - y/y, q/q, FY '26, Q1 '26.
 - Use "Est:" for consensus expectations.
 - Use "c." for approximate values.
-- No bullet points.
-- No repeated information.
+- No bullet points. No repeated information.
 - No filler phrases like "management remains optimistic" unless backed by data.
 
-If the article lacks enough data for a full two-paragraph summary, write one strong paragraph. If the article is behind a paywall with no extractable content, write a one-sentence note and skip.
-"""
+If the article lacks enough data for a full two-paragraph summary, write one strong paragraph.
+If the article is behind a paywall with no extractable content, write one sentence noting this."""
 
 
 def summarise(client: anthropic.Anthropic, article: dict) -> str:
-    body = fetch_full_text(article["link"]) if article["link"] else ""
-    content = f"Title: {article['title']}\n\nSource: {article['source']}\n\n"
-    if body:
-        content += f"Article text:\n{body}"
-    else:
-        content += f"Summary/excerpt:\n{article['summary']}"
-
+    body    = fetch_full_text(article["link"]) if article["link"] else ""
+    content = f"Title: {article['title']}\nSource: {article['source']}\n\n"
+    content += f"Article text:\n{body}" if body else f"Summary/excerpt:\n{article['summary']}"
     try:
         msg = client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -183,70 +153,152 @@ def summarise(client: anthropic.Anthropic, article: dict) -> str:
         return f"[Summary unavailable: {e}]"
 
 
-# ── Email builder ─────────────────────────────────────────────────────────────
+# ── HTML page builder ─────────────────────────────────────────────────────────
 
-def build_email(articles: list[dict], summaries: list[str]) -> tuple[str, str]:
-    """Returns (subject, html_body)."""
-    subject = f"Daily Tech & AI Digest — {TODAY}"
-
-    html_parts = [f"""
-    <html><body style="font-family: Georgia, serif; max-width: 700px; margin: auto;
-                       background: #ffffff; color: #1a1a1a; padding: 32px;">
-    <h2 style="font-size:18px; border-bottom:2px solid #1a1a1a; padding-bottom:8px;
-               margin-bottom:24px; letter-spacing:0.5px;">
-        DAILY TECH &amp; AI DIGEST &mdash; {TODAY.upper()}
-    </h2>
-    """]
-
+def build_html(articles: list[dict], summaries: list[str]) -> str:
+    cards = ""
     for article, summary in zip(articles, summaries):
         pub_str = ""
         if article["published"]:
-            pub_sast = article["published"].astimezone(SAST)
-            pub_str  = pub_sast.strftime("%H:%M SAST")
+            pub_str = article["published"].astimezone(SAST).strftime("%H:%M SAST")
 
-        html_parts.append(f"""
-        <div style="margin-bottom:32px; padding-bottom:24px;
-                    border-bottom:1px solid #e0e0e0;">
-            <p style="font-size:11px; color:#888; margin:0 0 6px 0;
-                      letter-spacing:0.8px; text-transform:uppercase;">
-                {article['source']} &nbsp;|&nbsp; {pub_str}
-            </p>
-            <h3 style="font-size:15px; font-weight:bold; margin:0 0 10px 0;
-                       line-height:1.4;">
-                <a href="{article['link']}" style="color:#1a1a1a; text-decoration:none;">
-                    {article['title']}
-                </a>
-            </h3>
-            <p style="font-size:13.5px; line-height:1.75; margin:0; color:#2a2a2a;">
-                {summary.replace(chr(10), '<br>')}
-            </p>
-        </div>
-        """)
+        safe_summary = summary.replace("\n\n", "</p><p>").replace("\n", " ")
 
-    if not articles:
-        html_parts.append("""
-        <p style="color:#888; font-size:13px;">
-            No major tech/AI articles matched today's filter criteria.
-            Check back tomorrow.
-        </p>
-        """)
+        cards += f"""
+        <article>
+          <div class="meta">{article['source']} &nbsp;·&nbsp; {pub_str}</div>
+          <h2><a href="{article['link']}" target="_blank" rel="noopener">{article['title']}</a></h2>
+          <p>{safe_summary}</p>
+        </article>"""
 
-    html_parts.append("</body></html>")
-    return subject, "".join(html_parts)
+    if not cards:
+        cards = '<p class="empty">No major tech/AI articles matched today\'s filters. Check back tomorrow.</p>'
 
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tech & AI Digest — {TODAY}</title>
+  <style>
+    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
-# ── Email sender ──────────────────────────────────────────────────────────────
+    body {{
+      font-family: 'Georgia', serif;
+      background: #0f0f0f;
+      color: #e8e2d9;
+      min-height: 100vh;
+      padding: 48px 24px 80px;
+    }}
 
-def send_email(subject: str, html_body: str) -> None:
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = SENDER_EMAIL
-    msg["To"]      = RECIPIENT_EMAIL
-    msg.attach(MIMEText(html_body, "html"))
+    .container {{
+      max-width: 760px;
+      margin: 0 auto;
+    }}
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(SENDER_EMAIL, GMAIL_APP_PASS)
-        server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
+    header {{
+      border-bottom: 1px solid #2a2a2a;
+      padding-bottom: 24px;
+      margin-bottom: 40px;
+    }}
+
+    .label {{
+      font-family: 'Helvetica Neue', sans-serif;
+      font-size: 10px;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: #c8a96e;
+      margin-bottom: 10px;
+    }}
+
+    h1 {{
+      font-size: 22px;
+      font-weight: normal;
+      color: #f0ebe3;
+      line-height: 1.3;
+    }}
+
+    .datestamp {{
+      font-family: 'Helvetica Neue', sans-serif;
+      font-size: 12px;
+      color: #555;
+      margin-top: 6px;
+    }}
+
+    article {{
+      border-bottom: 1px solid #1e1e1e;
+      padding: 32px 0;
+    }}
+
+    article:last-child {{
+      border-bottom: none;
+    }}
+
+    .meta {{
+      font-family: 'Helvetica Neue', sans-serif;
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #555;
+      margin-bottom: 10px;
+    }}
+
+    h2 {{
+      font-size: 16px;
+      font-weight: bold;
+      line-height: 1.45;
+      margin-bottom: 14px;
+      color: #f0ebe3;
+    }}
+
+    h2 a {{
+      color: inherit;
+      text-decoration: none;
+    }}
+
+    h2 a:hover {{
+      color: #c8a96e;
+    }}
+
+    p {{
+      font-size: 14px;
+      line-height: 1.8;
+      color: #a89f94;
+    }}
+
+    .empty {{
+      color: #444;
+      font-style: italic;
+      padding: 40px 0;
+    }}
+
+    footer {{
+      margin-top: 60px;
+      padding-top: 24px;
+      border-top: 1px solid #1e1e1e;
+      font-family: 'Helvetica Neue', sans-serif;
+      font-size: 11px;
+      color: #333;
+      text-align: center;
+    }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="label">Daily Briefing</div>
+      <h1>Tech &amp; AI Digest</h1>
+      <div class="datestamp">{TODAY}</div>
+    </header>
+
+    {cards}
+
+    <footer>
+      Generated at 02:00 SAST &nbsp;·&nbsp; Sources: Reuters, CNBC, FT &nbsp;·&nbsp; Summaries via Claude
+    </footer>
+  </div>
+</body>
+</html>"""
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -256,22 +308,20 @@ def main():
     articles = fetch_articles()
     print(f"  Found {len(articles)} relevant articles.")
 
-    if not articles:
-        subject, html = build_email([], [])
-        send_email(subject, html)
-        print("  Sent empty digest.")
-        return
-
-    client   = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
     summaries = []
+    if articles:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
+        for i, article in enumerate(articles, 1):
+            print(f"  Summarising {i}/{len(articles)}: {article['title'][:60]}...")
+            summaries.append(summarise(client, article))
 
-    for i, article in enumerate(articles, 1):
-        print(f"  Summarising {i}/{len(articles)}: {article['title'][:60]}...")
-        summaries.append(summarise(client, article))
+    html = build_html(articles, summaries)
 
-    subject, html = build_email(articles, summaries)
-    send_email(subject, html)
-    print(f"  Digest sent to {RECIPIENT_EMAIL}.")
+    # Write to docs/index.html (GitHub Pages serves from /docs by default)
+    out = Path("docs")
+    out.mkdir(exist_ok=True)
+    (out / "index.html").write_text(html, encoding="utf-8")
+    print("  Written to docs/index.html")
 
 
 if __name__ == "__main__":
