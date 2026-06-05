@@ -432,6 +432,8 @@ FORMATTING — follow exactly:
 - bn = billion, m = million, tn = trillion, k = thousand.
 - Spaces in thousands: "10 000" not "10,000".
 - ISO currency codes: USD, EUR, GBP, KRW, JPY, CNY, ZAR.
+- NEVER use $ or £ or € symbols. Always write USD, GBP, EUR in full.
+- Correct: "USD4.2bn" — Wrong: "$4.2bn" or "$4.2 billion".
 - Est: used inline for consensus (e.g. "revenue of USD4.2bn (Est: USD3.9bn)").
 - Use "c." for approximate values.
 - Dates: 15 Sep '26. FY '26. CY '26. YTD. y/y. q/q.
@@ -461,10 +463,71 @@ If the article lacks sufficient data for two paragraphs, write one strong paragr
 If the article is paywalled with no extractable content, write: "Article paywalled — insufficient data to summarise." """
 
 
+def group_articles(articles: list[dict]) -> list[dict]:
+    """Group articles about the same company/event into merged entries.
+    Returns a list of grouped articles, each with combined sources and text."""
+    if not articles:
+        return []
+
+    groups = []
+    used = set()
+
+    for i, article in enumerate(articles):
+        if i in used:
+            continue
+
+        group = {
+            "titles":    [article["title"]],
+            "sources":   [article["source"]],
+            "links":     [article["link"]],
+            "summary":   article["summary"],
+            "published": article["published"],
+            # Keep the most informative title as the display title
+            "title":     article["title"],
+            "link":      article["link"],
+            "source":    article["source"],
+        }
+        used.add(i)
+
+        # Find other articles covering the same company/event
+        title_a = article["title"].lower()
+        words_a = set(w for w in title_a.split() if len(w) > 4)
+
+        for j, other in enumerate(articles):
+            if j in used or j == i:
+                continue
+            title_b = other["title"].lower()
+            words_b = set(w for w in title_b.split() if len(w) > 4)
+            # Match if 3+ meaningful words overlap (same story, different source)
+            overlap = words_a & words_b
+            if len(overlap) >= 3:
+                group["titles"].append(other["title"])
+                group["sources"].append(other["source"])
+                group["links"].append(other["link"])
+                group["summary"] += " " + other["summary"]
+                used.add(j)
+
+        groups.append(group)
+
+    return groups
+
+
 def summarise(article: dict) -> str:
-    body    = fetch_full_text(article["link"]) if article["link"] else ""
-    content = f"Title: {article['title']}\nSource: {article['source']}\n\n"
-    content += f"Article text:\n{body}" if body else f"Summary/excerpt:\n{article['summary']}"
+    """Summarise a single article or a merged group of articles."""
+    # Fetch full text for all links in the group
+    links  = article.get("links", [article["link"]])
+    titles = article.get("titles", [article["title"]])
+
+    combined_text = ""
+    for title, link in zip(titles, links):
+        body = fetch_full_text(link) if link else ""
+        combined_text += f"\n\n--- Source: {article.get('source', '')} | Title: {title} ---\n"
+        combined_text += body if body else article.get("summary", "")
+
+    content = f"Company/topic: {article['title']}\n"
+    if len(titles) > 1:
+        content += f"Note: {len(titles)} sources cover this story — synthesise into one summary.\n"
+    content += combined_text.strip()
 
     payload = {
         "model": "llama-3.3-70b-versatile",
@@ -476,20 +539,36 @@ def summarise(article: dict) -> str:
         "temperature": 0.3,
     }
 
-    try:
-        resp = requests.post(
-            GROQ_URL,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {GROQ_KEY}",
-            },
-            data=json.dumps(payload),
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        return f"[Summary unavailable: {e}]"
+    for attempt in range(2):
+        try:
+            resp = requests.post(
+                GROQ_URL,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {GROQ_KEY}",
+                },
+                data=json.dumps(payload),
+                timeout=30,
+            )
+            if resp.status_code == 429:
+                wait = 60 * (attempt + 1)
+                print(f"    Groq rate limit hit — waiting {wait}s before retry...")
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            text = resp.json()["choices"][0]["message"]["content"].strip()
+            # Enforce ISO currency — replace any $ with USD
+            import re as _re
+            text = _re.sub(r'\$\s*([0-9])', r'USD', text)
+            text = _re.sub(r'\$\s*([a-zA-Z])', r'USD ', text)
+            return text
+        except Exception as e:
+            if attempt == 0:
+                print(f"    Groq error, retrying in 60s: {e}")
+                time.sleep(60)
+            else:
+                return f"[Summary unavailable: {e}]"
+    return "[Summary unavailable: max retries exceeded]"
 
 
 # ── HTML builder ──────────────────────────────────────────────────────────────
@@ -503,16 +582,25 @@ def build_html(articles: list[dict], summaries: list[str],
         pub_str = ""
         if article["published"]:
             pub_str = article["published"].astimezone(SAST).strftime("%H:%M SAST")
+
         # Normalise line breaks then add spacing between paragraphs
         summary_clean = summary.replace("\r\n", "\n").replace("\r", "\n")
-        # Collapse 3+ newlines to 2
         import re as _re
         summary_clean = _re.sub(r"\n{2,}", "\n\n", summary_clean).strip()
         safe_summary = summary_clean.replace("\n\n", '</p><p style="margin-top:16px;">').replace("\n", " ")
+
+        # Build source badges — one per source if grouped
+        sources  = article.get("sources", [article["source"]])
+        links    = article.get("links",   [article["link"]])
+        src_html = " &nbsp;·&nbsp; ".join(
+            f'<a href="{l}" target="_blank" rel="noopener" style="color:inherit;">{s}</a>'
+            for s, l in zip(sources, links)
+        )
+
         cards += f"""
         <article>
-          <div class="meta">{article['source']} &nbsp;·&nbsp; {pub_str}</div>
-          <h2><a href="{article['link']}" target="_blank" rel="noopener">{article['title']}</a></h2>
+          <div class="meta">{src_html} &nbsp;·&nbsp; {pub_str}</div>
+          <h2>{article['title']}</h2>
           <p>{safe_summary}</p>
         </article>"""
 
@@ -726,14 +814,21 @@ def main():
     articles, further = fetch_articles()
     print(f"  {len(articles)} articles to summarise, {len(further)} for further reading.")
 
-    summaries = []
-    for i, article in enumerate(articles, 1):
-        print(f"  Summarising {i}/{len(articles)}: {article['title'][:60]}...")
-        summaries.append(summarise(article))
-        if i < len(articles):
-            time.sleep(15)  # avoid Gemini free tier rate limit
+    # Group articles covering the same story before summarising
+    grouped = group_articles(articles)
+    saved   = len(articles) - len(grouped)
+    if saved > 0:
+        print(f"  Grouped into {len(grouped)} stories (saved {saved} API calls).")
 
-    html = build_html(articles, summaries, further)
+    summaries = []
+    for i, article in enumerate(grouped, 1):
+        src_list = ", ".join(article.get("sources", [article["source"]]))
+        print(f"  Summarising {i}/{len(grouped)} [{src_list}]: {article['title'][:50]}...")
+        summaries.append(summarise(article))
+        if i < len(grouped):
+            time.sleep(30)  # avoid Groq free tier rate limit
+
+    html = build_html(grouped, summaries, further)
 
     out = Path("docs")
     out.mkdir(exist_ok=True)
