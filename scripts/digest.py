@@ -2,21 +2,21 @@
 Daily Tech & AI News Digest
 Fetches top tech/AI headlines from Reuters, CNBC, FT RSS feeds,
 filters for major company names and market-moving events,
-summarises via Claude API, and writes a clean HTML page for GitHub Pages.
+summarises via Google Gemini API, and writes a clean HTML page for GitHub Pages.
 """
 
 import os
 import feedparser
-import anthropic
 import requests
+import json
 from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
 from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
-ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
+GEMINI_KEY   = os.environ["GEMINI_API_KEY"]
+GEMINI_URL   = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
-# SAST is UTC+2
 SAST  = timezone(timedelta(hours=2))
 TODAY = datetime.now(SAST).strftime("%A, %d %B %Y")
 
@@ -137,18 +137,26 @@ If the article lacks enough data for a full two-paragraph summary, write one str
 If the article is behind a paywall with no extractable content, write one sentence noting this."""
 
 
-def summarise(client: anthropic.Anthropic, article: dict) -> str:
+def summarise(article: dict) -> str:
     body    = fetch_full_text(article["link"]) if article["link"] else ""
     content = f"Title: {article['title']}\nSource: {article['source']}\n\n"
     content += f"Article text:\n{body}" if body else f"Summary/excerpt:\n{article['summary']}"
+
+    payload = {
+        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": [{"parts": [{"text": content}]}],
+        "generationConfig": {"maxOutputTokens": 600, "temperature": 0.3},
+    }
+
     try:
-        msg = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=600,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": content}],
+        resp = requests.post(
+            f"{GEMINI_URL}?key={GEMINI_KEY}",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps(payload),
+            timeout=30,
         )
-        return msg.content[0].text.strip()
+        resp.raise_for_status()
+        return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
         return f"[Summary unavailable: {e}]"
 
@@ -294,7 +302,7 @@ def build_html(articles: list[dict], summaries: list[str]) -> str:
     {cards}
 
     <footer>
-      Generated at 02:00 SAST &nbsp;·&nbsp; Sources: Reuters, CNBC, FT &nbsp;·&nbsp; Summaries via Claude
+      Generated at 02:00 SAST &nbsp;·&nbsp; Sources: Reuters, CNBC, FT &nbsp;·&nbsp; Summaries via Gemini
     </footer>
   </div>
 </body>
@@ -309,15 +317,12 @@ def main():
     print(f"  Found {len(articles)} relevant articles.")
 
     summaries = []
-    if articles:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
-        for i, article in enumerate(articles, 1):
-            print(f"  Summarising {i}/{len(articles)}: {article['title'][:60]}...")
-            summaries.append(summarise(client, article))
+    for i, article in enumerate(articles, 1):
+        print(f"  Summarising {i}/{len(articles)}: {article['title'][:60]}...")
+        summaries.append(summarise(article))
 
     html = build_html(articles, summaries)
 
-    # Write to docs/index.html (GitHub Pages serves from /docs by default)
     out = Path("docs")
     out.mkdir(exist_ok=True)
     (out / "index.html").write_text(html, encoding="utf-8")
