@@ -61,24 +61,51 @@ THEMATIC_KEYWORDS = [
     "talent", "research", "benchmark", "open source",
 ]
 
-# Exclusion patterns — block roundups, opinion pieces, and newsletter digests
-EXCLUDE_PATTERNS = [
+# Fully blocked — junk with no value anywhere on the page
+EXCLUDE_ALWAYS = [
     # Roundups and newsletters
     "and more", "5 things", "morning squawk", "what to know", "week ahead",
     "roundup", "wrap", "recap", "things to watch", "what's happening",
     "need to know", "in charts", "in numbers", "top stories", "highlights",
     "morning brief", "evening brief", "daily briefing", "this week",
     "market open", "before the bell", "after the bell", "premarket",
-    # Opinion / analysis / recommendations
+    # Sponsored content
+    "sponsored", "partner content", "presented by", "paid post",
+    # Pure listicles
+    "obsessing over", "everything you need", "all you need",
+]
+
+# Summary-only exclusions — too soft for a full summary but fine as further reading
+EXCLUDE_SUMMARY = [
+    # Opinion / recommendations
     "is a buy", "is a sell", "is a hold", "here's why", "why you should",
     "the case for", "the case against", "opinion:", "commentary:",
     "analyst says", "analysts say", "wall street says", "should you buy",
     "should you sell", "time to buy", "time to sell", "worth buying",
     "is it worth", "overrated", "underrated", "undervalued", "overvalued",
     "price target", "rating", "upgrade", "downgrade",
-    # Listicles and soft content
-    "obsessing over", "everything you need", "all you need", "explained",
-    "what is", "who is", "how to", "guide to", "look at",
+    # Soft explainers
+    "what is", "who is", "how to", "guide to", "look at", "explained",
+    # Interviews and profiles
+    "sits down with", "in conversation with", "talks to", "speaks to",
+    "interview:", "interview with", "q&a", "in his own words",
+    # Predictions and outlooks
+    "what to expect", "predictions for", "outlook for", "forecast for",
+    "what lies ahead", "what's next for", "the future of", "looking ahead",
+    # Retrospectives
+    "lessons from", "history of", "look back at", "years ago", "founded",
+    "the rise of", "the story of", "how it started",
+    # Awards and rankings
+    "best companies", "top 10", "top 5", "most valuable", "richest",
+    "ranked:", "best and worst", "winners and losers",
+    # Personal finance crossover
+    "how this affects you", "what it means for your", "investors should",
+    "retail investors", "for your portfolio",
+    # Event and conference coverage
+    "at davos", "at ces", "at sxsw", "keynote:", "speaks at", "appearance at",
+    # Career and culture
+    "culture at", "what it's like to work", "employees say", "workers say",
+    "best employer", "great place to work",
 ]
 
 MAX_SUMMARIES = 10   # articles that get full summaries
@@ -111,10 +138,15 @@ def has_financial_event(text: str) -> bool:
 def has_thematic(text: str) -> bool:
     return any(k in text for k in THEMATIC_KEYWORDS)
 
-def is_excluded(title: str) -> bool:
-    """Block roundups, opinion pieces, and newsletter digests."""
+def is_excluded_always(title: str) -> bool:
+    """Fully block junk — never appears anywhere on the page."""
     t = title.lower()
-    return any(p in t for p in EXCLUDE_PATTERNS)
+    return any(p in t for p in EXCLUDE_ALWAYS)
+
+def is_excluded_summary(title: str) -> bool:
+    """Too soft for a full summary but fine as further reading."""
+    t = title.lower()
+    return any(p in t for p in EXCLUDE_SUMMARY)
 
 def is_duplicate(title: str, existing: list[dict]) -> bool:
     return any(a["title"].lower()[:60] == title.lower()[:60] for a in existing)
@@ -157,12 +189,12 @@ def fetch_articles() -> tuple[list[dict], list[dict]]:
                        "summary": summary, "link": link,
                        "published": published}
 
-            # Skip roundups, opinion pieces, newsletters
-            if is_excluded(title):
+            # Fully block junk — skip entirely
+            if is_excluded_always(title):
                 continue
 
-            # Tier 1: company-specific + financial event → full summary
-            if has_company(text) and has_financial_event(text):
+            # Tier 1: company-specific + financial event + not soft → full summary
+            if has_company(text) and has_financial_event(text) and                not is_excluded_summary(title):
                 if not is_duplicate(title, summaries_pool):
                     summaries_pool.append(article)
 
