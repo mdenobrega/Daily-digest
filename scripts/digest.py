@@ -35,8 +35,7 @@ FEEDS = [
     ("CNBC",        "https://www.cnbc.com/id/10000664/device/rss/rss.html"),
     # FT
     ("FT",          "https://www.ft.com/rss/home/technology"),
-    # Bloomberg Technology
-    ("Bloomberg",   "https://feeds.bloomberg.com/technology/news.rss"),
+
     # TechCrunch
     ("TechCrunch",  "https://techcrunch.com/feed/"),
     # The Verge
@@ -265,6 +264,62 @@ def fetch_newsapi(cutoff: datetime) -> list[dict]:
         return []
 
 
+def scrape_reuters(cutoff: datetime) -> list[dict]:
+    """Scrape Reuters technology and business section pages directly.
+    Catches articles that miss the RSS feed or NewsAPI delay."""
+    pages = [
+        "https://www.reuters.com/technology/",
+        "https://www.reuters.com/business/",
+        "https://www.reuters.com/business/finance/",
+        "https://www.reuters.com/technology/artificial-intelligence/",
+    ]
+    articles = []
+    seen_links = set()
+
+    for page_url in pages:
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (compatible; NewsDigestBot/1.0)",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            resp = requests.get(page_url, headers=headers, timeout=15)
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            # Reuters article links follow /YYYY/MM/DD/ pattern
+            for a_tag in soup.find_all("a", href=True):
+                href = a_tag["href"]
+                if not href.startswith("/"):
+                    continue
+                # Must look like a Reuters article path
+                import re
+                if not re.search(r"/[0-9]{4}/[0-9]{2}/[0-9]{2}/", href):
+                    continue
+
+                full_url = "https://www.reuters.com" + href.split("?")[0]
+                if full_url in seen_links:
+                    continue
+                seen_links.add(full_url)
+
+                title = a_tag.get_text(separator=" ").strip()
+                # Skip nav links, short strings, and non-article text
+                if len(title) < 20 or len(title) > 250:
+                    continue
+
+                articles.append({
+                    "source":    "Reuters",
+                    "title":     title,
+                    "summary":   "",
+                    "link":      full_url,
+                    "published": None,  # timestamp fetched later if needed
+                })
+
+        except Exception as e:
+            print(f"  Reuters scrape error ({page_url}): {e}")
+
+    print(f"  Reuters scrape: found {len(articles)} candidate links.")
+    return articles
+
+
 def fetch_articles() -> tuple[list[dict], list[dict]]:
     """Returns (summary_articles, further_reading_articles)."""
     summaries_pool = []
@@ -274,8 +329,13 @@ def fetch_articles() -> tuple[list[dict], list[dict]]:
     # Supplement RSS with NewsAPI Reuters articles
     newsapi_articles = fetch_newsapi(cutoff)
 
-    all_entries = []  # (source, title, summary, link, published)
+    # Supplement with direct Reuters scrape
+    scraped_articles = scrape_reuters(cutoff)
+
+    all_entries = []
     for a in newsapi_articles:
+        all_entries.append(a)
+    for a in scraped_articles:
         all_entries.append(a)
 
     for source, url in FEEDS:
@@ -435,7 +495,12 @@ def build_html(articles: list[dict], summaries: list[str],
         pub_str = ""
         if article["published"]:
             pub_str = article["published"].astimezone(SAST).strftime("%H:%M SAST")
-        safe_summary = summary.replace("\n\n", '</p><p style="margin-top:14px;">').replace("\n", " ")
+        # Normalise line breaks then add spacing between paragraphs
+        summary_clean = summary.replace("\r\n", "\n").replace("\r", "\n")
+        # Collapse 3+ newlines to 2
+        import re as _re
+        summary_clean = _re.sub(r"\n{2,}", "\n\n", summary_clean).strip()
+        safe_summary = summary_clean.replace("\n\n", '</p><p style="margin-top:16px;">').replace("\n", " ")
         cards += f"""
         <article>
           <div class="meta">{article['source']} &nbsp;·&nbsp; {pub_str}</div>
@@ -471,7 +536,7 @@ def build_html(articles: list[dict], summaries: list[str],
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tech & AI Digest — {TODAY}</title>
+  <title>TMT Snapshot — {TODAY}</title>
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
@@ -631,7 +696,7 @@ def build_html(articles: list[dict], summaries: list[str],
   <div class="container">
     <header>
       <div class="label">Daily Briefing</div>
-      <h1>Tech &amp; AI Digest</h1>
+      <h1>TMT Snapshot</h1>
       <div class="datestamp">{TODAY}</div>
     </header>
 
@@ -639,7 +704,7 @@ def build_html(articles: list[dict], summaries: list[str],
     {further_html}
 
     <footer>
-      Generated at 02:00 SAST &nbsp;·&nbsp; Sources: Reuters, CNBC, FT &nbsp;·&nbsp; Summaries via Groq
+      Generated at 06:00 SAST &nbsp;·&nbsp; Sources: Reuters, CNBC, FT, TechCrunch, The Verge, WSJ &nbsp;·&nbsp; Summaries via Groq
     </footer>
   </div>
 </body>
