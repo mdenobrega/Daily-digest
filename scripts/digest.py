@@ -61,6 +61,26 @@ THEMATIC_KEYWORDS = [
     "talent", "research", "benchmark", "open source",
 ]
 
+# Exclusion patterns — block roundups, opinion pieces, and newsletter digests
+EXCLUDE_PATTERNS = [
+    # Roundups and newsletters
+    "and more", "5 things", "morning squawk", "what to know", "week ahead",
+    "roundup", "wrap", "recap", "things to watch", "what's happening",
+    "need to know", "in charts", "in numbers", "top stories", "highlights",
+    "morning brief", "evening brief", "daily briefing", "this week",
+    "market open", "before the bell", "after the bell", "premarket",
+    # Opinion / analysis / recommendations
+    "is a buy", "is a sell", "is a hold", "here's why", "why you should",
+    "the case for", "the case against", "opinion:", "commentary:",
+    "analyst says", "analysts say", "wall street says", "should you buy",
+    "should you sell", "time to buy", "time to sell", "worth buying",
+    "is it worth", "overrated", "underrated", "undervalued", "overvalued",
+    "price target", "rating", "upgrade", "downgrade",
+    # Listicles and soft content
+    "obsessing over", "everything you need", "all you need", "explained",
+    "what is", "who is", "how to", "guide to", "look at",
+]
+
 MAX_SUMMARIES = 10   # articles that get full summaries
 MAX_FURTHER   = 8    # articles in further reading
 
@@ -90,6 +110,11 @@ def has_financial_event(text: str) -> bool:
 
 def has_thematic(text: str) -> bool:
     return any(k in text for k in THEMATIC_KEYWORDS)
+
+def is_excluded(title: str) -> bool:
+    """Block roundups, opinion pieces, and newsletter digests."""
+    t = title.lower()
+    return any(p in t for p in EXCLUDE_PATTERNS)
 
 def is_duplicate(title: str, existing: list[dict]) -> bool:
     return any(a["title"].lower()[:60] == title.lower()[:60] for a in existing)
@@ -131,6 +156,10 @@ def fetch_articles() -> tuple[list[dict], list[dict]]:
             article = {"source": source, "title": title,
                        "summary": summary, "link": link,
                        "published": published}
+
+            # Skip roundups, opinion pieces, newsletters
+            if is_excluded(title):
+                continue
 
             # Tier 1: company-specific + financial event → full summary
             if has_company(text) and has_financial_event(text):
