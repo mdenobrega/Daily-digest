@@ -1,8 +1,8 @@
 """
 Daily Tech & AI News Digest
 Fetches top tech/AI headlines from Reuters, CNBC, FT RSS feeds,
-filters for major company names and market-moving events,
-summarises via Google Gemini API, and writes a clean HTML page for GitHub Pages.
+splits into company-specific summaries and thematic further reading,
+summarises via Google Gemini API, writes a clean HTML page for GitHub Pages.
 """
 
 import os
@@ -15,8 +15,8 @@ from bs4 import BeautifulSoup
 from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
-GEMINI_KEY   = os.environ["GEMINI_API_KEY"]
-GEMINI_URL   = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+GEMINI_KEY = os.environ["GEMINI_API_KEY"]
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
 SAST  = timezone(timedelta(hours=2))
 TODAY = datetime.now(SAST).strftime("%A, %d %B %Y")
@@ -30,7 +30,9 @@ FEEDS = [
     ("FT",      "https://www.ft.com/rss/home/technology"),
 ]
 
-# ── Filter keywords ───────────────────────────────────────────────────────────
+# ── Keywords ──────────────────────────────────────────────────────────────────
+
+# Specific company names — article must mention one of these to be summarised
 COMPANY_KEYWORDS = [
     "nvidia", "apple", "microsoft", "google", "alphabet", "meta", "amazon",
     "tesla", "openai", "anthropic", "intel", "amd", "qualcomm", "broadcom",
@@ -38,26 +40,59 @@ COMPANY_KEYWORDS = [
     "ibm", "sap", "adobe", "snowflake", "databricks", "huawei",
     "aws", "azure", "gcp", "cloudflare", "datadog",
     "netflix", "spotify", "uber", "lyft", "airbnb", "x.com", "twitter",
-    "micron", "sk hynix", "western digital", "seagate",
+    "micron", "sk hynix", "western digital", "seagate", "crowdstrike",
+    "spacex", "bluesky", "xai", "deepmind", "gemini", "mistral",
 ]
 
-EVENT_KEYWORDS = [
-    "earnings", "results", "revenue", "profit", "guidance", "forecast",
-    "layoffs", "cuts jobs", "acquisition", "merger", "ipo", "buyback",
-    "dividend", "capex", "ai", "chip", "model", "launch", "regulation",
-    "antitrust", "fine", "lawsuit", "ceo", "partnership", "deal",
+# Hard financial/operational events — required for a full summary
+FINANCIAL_EVENTS = [
+    "earnings", "results", "revenue", "profit", "loss", "guidance", "forecast",
+    "layoffs", "cuts jobs", "job cuts", "acquisition", "acquires", "merger",
+    "ipo", "buyback", "share repurchase", "dividend", "capex", "valuation",
+    "raises", "funding", "investment", "stake", "ceo", "cfo", "coo",
+    "antitrust", "fine", "lawsuit", "penalty", "regulation", "ban",
+    "partnership", "deal", "contract", "stock", "shares", "market cap",
 ]
 
-MAX_ARTICLES  = 12
-MAX_AGE_HOURS = 26
+# Broader tech/AI signals — enough for further reading but not a full summary
+THEMATIC_KEYWORDS = [
+    "ai", "chip", "semiconductor", "model", "launch", "data centre",
+    "cloud", "compute", "llm", "robot", "autonomous", "regulation",
+    "talent", "research", "benchmark", "open source",
+]
+
+MAX_SUMMARIES = 10   # articles that get full summaries
+MAX_FURTHER   = 8    # articles in further reading
+
+
+def get_cutoff() -> datetime:
+    """
+    Returns start of previous business day in UTC.
+    Monday 2am SAST  → Friday 00:00 SAST (3 days back)
+    Tue–Fri 2am SAST → previous day 00:00 SAST (1 day back)
+    """
+    now_sast    = datetime.now(SAST)
+    weekday     = now_sast.weekday()          # 0=Mon ... 4=Fri
+    days_back   = 3 if weekday == 0 else 1
+    cutoff_date = now_sast.date() - timedelta(days=days_back)
+    cutoff_sast = datetime(cutoff_date.year, cutoff_date.month,
+                           cutoff_date.day, 0, 0, tzinfo=SAST)
+    return cutoff_sast.astimezone(timezone.utc)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def is_relevant(title: str, summary: str) -> bool:
-    text = (title + " " + summary).lower()
-    return any(k in text for k in COMPANY_KEYWORDS) and \
-           any(k in text for k in EVENT_KEYWORDS)
+def has_company(text: str) -> bool:
+    return any(k in text for k in COMPANY_KEYWORDS)
+
+def has_financial_event(text: str) -> bool:
+    return any(k in text for k in FINANCIAL_EVENTS)
+
+def has_thematic(text: str) -> bool:
+    return any(k in text for k in THEMATIC_KEYWORDS)
+
+def is_duplicate(title: str, existing: list[dict]) -> bool:
+    return any(a["title"].lower()[:60] == title.lower()[:60] for a in existing)
 
 
 def fetch_full_text(url: str) -> str:
@@ -73,9 +108,11 @@ def fetch_full_text(url: str) -> str:
         return ""
 
 
-def fetch_articles() -> list[dict]:
-    articles = []
-    cutoff   = datetime.now(timezone.utc) - timedelta(hours=MAX_AGE_HOURS)
+def fetch_articles() -> tuple[list[dict], list[dict]]:
+    """Returns (summary_articles, further_reading_articles)."""
+    summaries_pool = []
+    further_pool   = []
+    cutoff         = get_cutoff()
 
     for source, url in FEEDS:
         feed = feedparser.parse(url)
@@ -89,21 +126,30 @@ def fetch_articles() -> list[dict]:
             title   = entry.get("title", "")
             summary = entry.get("summary", "")
             link    = entry.get("link", "")
+            text    = (title + " " + summary).lower()
 
-            if not is_relevant(title, summary):
-                continue
-            if any(a["title"].lower()[:60] == title.lower()[:60] for a in articles):
-                continue
+            article = {"source": source, "title": title,
+                       "summary": summary, "link": link,
+                       "published": published}
 
-            articles.append({"source": source, "title": title,
-                              "summary": summary, "link": link,
-                              "published": published})
+            # Tier 1: company-specific + financial event → full summary
+            if has_company(text) and has_financial_event(text):
+                if not is_duplicate(title, summaries_pool):
+                    summaries_pool.append(article)
 
-    articles.sort(
-        key=lambda x: x["published"] or datetime.min.replace(tzinfo=timezone.utc),
-        reverse=True,
-    )
-    return articles[:MAX_ARTICLES]
+            # Tier 2: company or thematic signal → further reading
+            elif (has_company(text) or has_thematic(text)) and link:
+                if not is_duplicate(title, further_pool) and \
+                   not is_duplicate(title, summaries_pool):
+                    further_pool.append(article)
+
+    def sort_key(x):
+        return x["published"] or datetime.min.replace(tzinfo=timezone.utc)
+
+    summaries_pool.sort(key=sort_key, reverse=True)
+    further_pool.sort(key=sort_key, reverse=True)
+
+    return summaries_pool[:MAX_SUMMARIES], further_pool[:MAX_FURTHER]
 
 
 # ── Summarisation ─────────────────────────────────────────────────────────────
@@ -162,17 +208,18 @@ def summarise(article: dict) -> str:
         return f"[Summary unavailable: {e}]"
 
 
-# ── HTML page builder ─────────────────────────────────────────────────────────
+# ── HTML builder ──────────────────────────────────────────────────────────────
 
-def build_html(articles: list[dict], summaries: list[str]) -> str:
+def build_html(articles: list[dict], summaries: list[str],
+               further: list[dict]) -> str:
+
+    # ── Main article cards ────────────────────────────────────────────────────
     cards = ""
     for article, summary in zip(articles, summaries):
         pub_str = ""
         if article["published"]:
             pub_str = article["published"].astimezone(SAST).strftime("%H:%M SAST")
-
         safe_summary = summary.replace("\n\n", "</p><p>").replace("\n", " ")
-
         cards += f"""
         <article>
           <div class="meta">{article['source']} &nbsp;·&nbsp; {pub_str}</div>
@@ -181,7 +228,27 @@ def build_html(articles: list[dict], summaries: list[str]) -> str:
         </article>"""
 
     if not cards:
-        cards = '<p class="empty">No major tech/AI articles matched today\'s filters. Check back tomorrow.</p>'
+        cards = '<p class="empty">No company-specific articles matched today\'s filters. Check back tomorrow.</p>'
+
+    # ── Further reading links ─────────────────────────────────────────────────
+    further_html = ""
+    if further:
+        links = ""
+        for a in further:
+            pub_str = ""
+            if a["published"]:
+                pub_str = a["published"].astimezone(SAST).strftime("%H:%M")
+            links += f"""
+            <div class="fr-item">
+              <span class="fr-source">{a['source']} {pub_str}</span>
+              <a href="{a['link']}" target="_blank" rel="noopener">{a['title']}</a>
+            </div>"""
+
+        further_html = f"""
+        <section class="further">
+          <div class="further-label">Further reading</div>
+          {links}
+        </section>"""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -265,9 +332,7 @@ def build_html(articles: list[dict], summaries: list[str]) -> str:
       text-decoration: none;
     }}
 
-    h2 a:hover {{
-      color: #c8a96e;
-    }}
+    h2 a:hover {{ color: #c8a96e; }}
 
     p {{
       font-size: 14px;
@@ -280,6 +345,50 @@ def build_html(articles: list[dict], summaries: list[str]) -> str:
       font-style: italic;
       padding: 40px 0;
     }}
+
+    /* Further reading */
+    .further {{
+      margin-top: 48px;
+      padding-top: 32px;
+      border-top: 1px solid #2a2a2a;
+    }}
+
+    .further-label {{
+      font-family: 'Helvetica Neue', sans-serif;
+      font-size: 10px;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: #c8a96e;
+      margin-bottom: 20px;
+    }}
+
+    .fr-item {{
+      display: flex;
+      gap: 16px;
+      align-items: baseline;
+      padding: 10px 0;
+      border-bottom: 1px solid #1a1a1a;
+    }}
+
+    .fr-item:last-child {{ border-bottom: none; }}
+
+    .fr-source {{
+      font-family: 'Helvetica Neue', sans-serif;
+      font-size: 10px;
+      color: #444;
+      white-space: nowrap;
+      min-width: 80px;
+      letter-spacing: 0.5px;
+    }}
+
+    .fr-item a {{
+      font-size: 13px;
+      color: #7a7068;
+      text-decoration: none;
+      line-height: 1.5;
+    }}
+
+    .fr-item a:hover {{ color: #c8a96e; }}
 
     footer {{
       margin-top: 60px;
@@ -301,6 +410,7 @@ def build_html(articles: list[dict], summaries: list[str]) -> str:
     </header>
 
     {cards}
+    {further_html}
 
     <footer>
       Generated at 02:00 SAST &nbsp;·&nbsp; Sources: Reuters, CNBC, FT &nbsp;·&nbsp; Summaries via Gemini
@@ -314,8 +424,8 @@ def build_html(articles: list[dict], summaries: list[str]) -> str:
 
 def main():
     print(f"[{TODAY}] Fetching articles...")
-    articles = fetch_articles()
-    print(f"  Found {len(articles)} relevant articles.")
+    articles, further = fetch_articles()
+    print(f"  {len(articles)} articles to summarise, {len(further)} for further reading.")
 
     summaries = []
     for i, article in enumerate(articles, 1):
@@ -324,7 +434,7 @@ def main():
         if i < len(articles):
             time.sleep(15)  # avoid Gemini free tier rate limit
 
-    html = build_html(articles, summaries)
+    html = build_html(articles, summaries, further)
 
     out = Path("docs")
     out.mkdir(exist_ok=True)
