@@ -826,7 +826,7 @@ def main():
         print(f"  Summarising {i}/{len(grouped)} [{src_list}]: {article['title'][:50]}...")
         summaries.append(summarise(article))
         if i < len(grouped):
-            time.sleep(30)  # avoid Groq free tier rate limit
+            time.sleep(8)   # avoid Groq free tier rate limit
 
     html = build_html(grouped, summaries, further)
 
