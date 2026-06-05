@@ -120,6 +120,11 @@ EXCLUDE_ALWAYS = [
     "tech download", "tech wrap", "tech briefing", "morning download",
     "daily download", "weekly download", "the download:",
     "squawk newsletter", "pro newsletter",
+    # Startup/event content
+    "startup battlefield", "techcrunch disrupt", "demo day",
+    "pitch competition", "accelerator", "hackathon",
+    # Travel/visit pieces without operational news
+    "food watch", "tracking website",
     # CEO personal wealth
     "net worth", "billionaire", "richest person", "wealthiest",
     "sail past", "surpasses", "fortune grows",
@@ -164,6 +169,9 @@ EXCLUDE_SUMMARY = [
     "senate hearing", "invites", "meets trump", "white house meeting",
     "meets with officials", "washington visit", "dc visit",
     "meets with lawmakers", "capitol hill",
+    # CEO visit/travel pieces
+    "obsessing over", "ceo visit", "ceo tour", "ceo trip",
+    "tracks jensen", "follows jensen", "follows ceo",
 ]
 
 MAX_SUMMARIES = 10   # articles that get full summaries
