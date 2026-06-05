@@ -32,16 +32,41 @@ FEEDS = [
 
 # ── Keywords ──────────────────────────────────────────────────────────────────
 
-# Specific company names — article must mention one of these to be summarised
+# Broad company signal — catches any named company in a tech/AI/finance context.
+# Kept intentionally wide; the AI summariser and FINANCIAL_EVENTS filter do the
+# precision work. Add names here only if they are consistently missed.
 COMPANY_KEYWORDS = [
+    # Big Tech & cloud
     "nvidia", "apple", "microsoft", "google", "alphabet", "meta", "amazon",
     "tesla", "openai", "anthropic", "intel", "amd", "qualcomm", "broadcom",
-    "tsmc", "samsung", "asml", "arm", "palantir", "salesforce", "oracle",
-    "ibm", "sap", "adobe", "snowflake", "databricks", "huawei",
-    "aws", "azure", "gcp", "cloudflare", "datadog",
-    "netflix", "spotify", "uber", "lyft", "airbnb", "x.com", "twitter",
-    "micron", "sk hynix", "western digital", "seagate", "crowdstrike",
-    "spacex", "bluesky", "xai", "deepmind", "gemini", "mistral",
+    "tsmc", "samsung", "asml", "arm holdings", "palantir", "salesforce",
+    "oracle", "ibm", "sap", "adobe", "snowflake", "databricks", "huawei",
+    "aws", "azure", "google cloud", "cloudflare", "datadog", "servicenow",
+    "workday", "veeva", "zendesk", "twilio", "okta", "crowdstrike", "palo alto",
+    # Consumer & social
+    "netflix", "spotify", "uber", "lyft", "airbnb", "twitter", "x.com",
+    "pinterest", "snap", "tiktok", "bytedance", "reddit", "linkedin",
+    "booking.com", "expedia", "tripadvisor", "doordash", "instacart",
+    # Semiconductors & hardware
+    "micron", "sk hynix", "western digital", "seagate", "marvell", "monolithic",
+    "foxconn", "hon hai", "pegatron", "flex", "jabil", "corning", "keysight",
+    # Data centres & infrastructure
+    "equinix", "digital realty", "iron mountain", "switch", "ntt data",
+    # AI & emerging tech
+    "spacex", "bluesky", "xai", "deepmind", "gemini", "mistral", "cohere",
+    "perplexity", "stability ai", "inflection", "runway", "scale ai",
+    "hugging face", "together ai", "anyscale", "weights & biases",
+    # Fintech
+    "stripe", "klarna", "revolut", "nubank", "affirm", "robinhood", "coinbase",
+    "paypal", "square", "block", "visa", "mastercard", "adyen",
+    # Enterprise & SaaS
+    "atlassian", "freshworks", "hubspot", "monday.com", "asana", "notion",
+    "figma", "canva", "gitlab", "github", "hashicorp", "confluent",
+    # Telecoms & hardware
+    "ericsson", "nokia", "cisco", "juniper", "arista", "pure storage",
+    "netapp", "dell", "hp", "lenovo", "asus",
+    # EV & robotics
+    "rivian", "lucid", "waymo", "cruise", "nuro", "aurora", "mobileye",
 ]
 
 # Hard financial/operational events — required for a full summary
@@ -52,6 +77,10 @@ FINANCIAL_EVENTS = [
     "raises", "funding", "investment", "stake", "ceo", "cfo", "coo",
     "antitrust", "fine", "lawsuit", "penalty", "regulation", "ban",
     "partnership", "deal", "contract", "stock", "shares", "market cap",
+    # Product/operational launches with financial scale
+    "unveils", "launches", "deploys", "expands", "opens", "signs",
+    "plans", "announces", "cuts", "closes", "sells", "buys",
+    "billion", "million", "USD", "EUR", "GBP",
 ]
 
 # Broader tech/AI signals — enough for further reading but not a full summary
@@ -73,6 +102,10 @@ EXCLUDE_ALWAYS = [
     "sponsored", "partner content", "presented by", "paid post",
     # Pure listicles
     "obsessing over", "everything you need", "all you need",
+    # Named newsletter columns
+    "tech download", "tech wrap", "tech briefing", "morning download",
+    "daily download", "weekly download", "the download:",
+    "squawk newsletter", "pro newsletter",
     # CEO personal wealth
     "net worth", "billionaire", "richest person", "wealthiest",
     "sail past", "surpasses", "fortune grows",
@@ -227,39 +260,78 @@ def fetch_articles() -> tuple[list[dict], list[dict]]:
 # ── Summarisation ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are Avior's institutional equity research analyst writing a daily tech and AI news digest for a sophisticated investor audience.
 
-For each article, write a concise summary in the style of the Economist and institutional equity research, following Avior's communications guidelines.
+Summarise the article in a concise, institutional investor style similar to equity research commentary. Follow all rules below exactly.
 
-Writing rules:
-- Laconic, direct, analytical. No fluff, no vague wording, no metaphors, no promotional language.
-- Active voice only. Replace passive constructions with direct, authoritative ones.
-- Maximum 20 words per sentence. Start a new sentence rather than using "while the".
-- Prioritise market-moving information and the "why it matters".
-- Every sentence must contain: financial metrics, strategic implications, competitive positioning, valuation implications, industry impact, operational changes, guidance changes, regulatory impact, AI implications, capital allocation, or market reaction.
-- Avoid concentrator words: key, critical, essential, optimise, impact — unless necessary for clarity.
-- Do not use the word "robust" except when describing quantitative results.
-- Do not use unclear antecedents — never use "this" or "that" without specifying the subject.
-- Replace "increased" with "rose" and "decreased" with "fell".
-- No filler phrases like "management remains optimistic" unless backed by data.
+---
 
-Structure (maximum two paragraphs):
-- Para 1: headline event, financial results, guidance, margins, revenue, EPS, bookings, capex, share price reaction, key operational metrics.
-- Para 2: strategic implications, competition, AI positioning, regulatory implications, industry context, valuation implications, risks, investor concerns, or long-term significance. Must contain factual evidence and metrics, not generic commentary.
+WRITING STYLE
+- Use a laconic writing style inspired by the Economist Style Guide.
+- Be direct, specific, and analytical.
+- Avoid fluff, vague wording, metaphors, and promotional language.
+- Use active voice only.
+- Prioritise market-moving information.
+- Focus on the "why it matters".
+- Every sentence must contain one of: financial metrics, strategic implications, competitive positioning, valuation implications, industry impact, operational changes, guidance changes, regulatory impact, AI implications, capital allocation, or market reaction.
+- Do not quote analysts, commentators, or third parties. Report only company facts.
+- No filler: "management remains optimistic", "strong positioning", "continues to execute" — unless supported by data.
 
-Formatting:
-- Sentence case only.
-- Double space after each sentence.
+---
+
+STRUCTURE — maximum two paragraphs:
+
+Paragraph 1: headline event, financial results, guidance, margins, revenue, EPS, bookings, capex, share price reaction, key operational metrics.
+
+Paragraph 2: strategic implications, competition, AI positioning, regulatory implications, industry context, valuation implications, risks, investor concerns, or long-term significance. Must contain factual evidence and metrics — no generic commentary.
+
+---
+
+IMPORTANT REQUIREMENTS
+- Always compare results against expectations where possible.
+- Include share price reactions if available.
+- Include valuation metrics if relevant.
+- Highlight contradictions: strong earnings but weak guidance; strong revenue but margin pressure; AI investment but worsening cash flow.
+- Explain why the stock moved.
+- Explain what investors are focused on next.
+- If discussing AI: quantify capex, compute demand, infrastructure spending, customer concentration, backlog, power usage, chip shortages, monetisation, or competitive positioning.
+- If discussing M&A: cover premiums, strategic rationale, synergies, shareholder structure, regulatory risk, and competitive implications.
+- If discussing layoffs: explain the strategic reason — AI automation, restructuring, margin preservation, or compute reallocation.
+
+---
+
+FORMATTING — follow exactly:
+- Sentence case. Every sentence starts with a capital letter. All proper nouns and company names capitalised (Nvidia, Meta, Amazon, AI, CEO).
+- Double space after every sentence.
 - Use "US" not "U.S".
 - bn = billion, m = million, tn = trillion, k = thousand.
-- Spaces for thousands: "10 000" not "10,000".
-- ISO currency codes: USD, EUR, GBP, KRW, JPY, CNY.
-- Dates: 15 Sep '19 format. Fiscal year: FY '26. Calendar year: CY '26. Year-to-date: YTD. Year-on-year: y/y.
-- Ratings in full capitals: OUTPERFORM, UNDERPERFORM, MARKET PERFORM.
-- Use "Est:" for consensus expectations.
+- Spaces in thousands: "10 000" not "10,000".
+- ISO currency codes: USD, EUR, GBP, KRW, JPY, CNY, ZAR.
+- Est: used inline for consensus (e.g. "revenue of USD4.2bn (Est: USD3.9bn)").
 - Use "c." for approximate values.
+- Dates: 15 Sep '26. FY '26. CY '26. YTD. y/y. q/q.
+- Ratings in full capitals: OUTPERFORM, UNDERPERFORM, MARKET PERFORM.
 - No bullet points. No repeated information.
+- Replace "increased" with "rose". Replace "decreased" with "fell".
+- Do not use "while the" — start a new sentence instead.
+- Maximum 20 words per sentence.
 
-If the article lacks enough data for a full two-paragraph summary, write one strong paragraph.
-If the article is behind a paywall with no extractable content, write one sentence noting this."""
+---
+
+REFERENCE EXAMPLES — match this style exactly:
+
+Example 1 — Nvidia:
+Nvidia forecast Q2 revenue of USD91bn (Est: USD86.8bn) and announced a USD80bn share buyback alongside a dividend increase to USD0.25 per share, as AI infrastructure demand continued accelerating globally.  Q1 revenue rose 85% y/y to USD81.6bn (Est: USD78.9bn), while data centre revenue rose 91% y/y to USD75.2bn (Est: USD72.8bn) and adjusted EPS came in at USD1.87 (Est: USD1.76).  Despite the beat, shares fell 1.6% after-hours as investors questioned whether AI spending can sustain current growth rates into 2027–2028.
+
+Management stated hyperscale AI capex could exceed USD700bn this year versus c.USD400bn in 2025, while the new Vera CPU platform could unlock an additional USD200bn addressable market.  CEO Jensen Huang acknowledged Nvidia has largely conceded China's AI chip market to Huawei following tightening US export restrictions, with China previously representing at least 20% of data centre revenue.  Nvidia flagged ongoing memory shortages and supply constraints across the Vera Rubin cycle, with competition from AMD, Intel and internally developed hyperscaler chips intensifying.
+
+Example 2 — Uber:
+Uber forecast Q2 gross bookings of USD56.25–57.75bn (Est: USD56.1bn) despite geopolitical and fuel-cost headwinds, sending shares 8% higher.  Q1 revenue rose 14% y/y to USD13.2bn, while gross bookings rose 25% y/y to USD53.7bn (Est: USD52.8bn).  Delivery revenue rose 34% y/y to USD5.1bn, materially outperforming mobility growth of 5% y/y, as the company benefited from strong international demand and Uber One membership growth beyond 50m users.
+
+Uber's results highlight increasing exposure to higher-frequency delivery and platform monetisation rather than solely ride-hailing.  AI is helping moderate hiring growth, with 95% of engineers now using AI coding tools monthly and over 10% of code written autonomously.  Uber is expanding its autonomous vehicle ecosystem through partnerships with Waymo, WeRide and Wayve, targeting robotaxi deployment in 15 cities by end-2026.
+
+---
+
+If the article lacks sufficient data for two paragraphs, write one strong paragraph.
+If the article is paywalled with no extractable content, write: "Article paywalled — insufficient data to summarise." """
 
 
 def summarise(article: dict) -> str:
