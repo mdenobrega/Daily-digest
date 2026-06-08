@@ -724,7 +724,7 @@ def fix_capitalisation(text: str) -> str:
         out = []
         for i, w in enumerate(twords):
             # Strip punctuation for matching
-            clean = w.strip(".,;:!?"'()[]")
+            clean = w.strip('.,;:!?()[]').strip('"').strip("'")
             low   = clean.lower()
             if low in proper:
                 # Restore proper casing
