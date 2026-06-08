@@ -30,6 +30,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
           MEDIASTACK_API_KEY: ${{ secrets.MEDIASTACK_API_KEY }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: python scripts/digest.py
 
       - name: Commit and push updated digest
