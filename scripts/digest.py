@@ -557,6 +557,8 @@ def fetch_articles() -> tuple[list[dict], list[dict]]:
 # ── Summarisation ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are Avior's institutional equity research analyst writing a daily tech and AI news digest for a sophisticated investor audience.
 
+ABSOLUTE RULE — READ FIRST: Write in proper English sentence case. This means: first word of each sentence is capitalised, proper nouns (company names, people, places, acronyms) are capitalised, and ALL OTHER WORDS are lowercase. Example of CORRECT output: "Nvidia reported Q2 revenue of USD81bn, beating estimates."  Example of WRONG output: "Nvidia Reported Q2 Revenue Of USD81bn, Beating Estimates." If your output has most words capitalised, you have failed this instruction.
+
 Summarise the article in a concise, institutional investor style similar to equity research commentary. Follow all rules below exactly.
 
 ---
@@ -685,28 +687,86 @@ def group_articles(articles: list[dict]) -> list[dict]:
     return groups
 
 
+def fix_capitalisation(text: str) -> str:
+    """Fix Title Case output from Groq — convert to proper sentence case."""
+    import re
+    words = text.split()
+    if len(words) < 10:
+        return text
+    # Count title-cased words (capitalised but not all-caps, longer than 4 chars)
+    title_cased = sum(
+        1 for w in words
+        if len(w) > 4 and w[0].isupper() and w[1:].islower() and not w.isupper()
+    )
+    if title_cased / len(words) < 0.35:
+        return text  # Already fine
+
+    # Known proper nouns and acronyms to preserve capitalisation
+    proper = {
+        "nvidia", "apple", "microsoft", "google", "alphabet", "meta", "amazon",
+        "tesla", "openai", "anthropic", "intel", "amd", "qualcomm", "broadcom",
+        "tsmc", "samsung", "asml", "arm", "spacex", "waymo", "uber", "netflix",
+        "spotify", "airbnb", "palantir", "salesforce", "oracle", "ibm", "adobe",
+        "stripe", "marvell", "crowdstrike", "bluesky", "helion", "manus", "flex",
+        "reuters", "cnbc", "techcrunch", "bloomberg", "wsj", "softbank",
+        "ai", "ceo", "cfo", "coo", "cto", "us", "eu", "uk", "usd", "eur",
+        "gbp", "zar", "cny", "krw", "jpy", "q1", "q2", "q3", "q4", "fy",
+        "cy", "ytd", "arr", "gpu", "ipo", "aws", "azure", "gcp", "llm",
+        "nasdaq", "s&p", "etf", "ebitda", "eps", "r&d", "m&a",
+    }
+    # Split on double-space sentence boundaries
+    sentences = re.split(r"  +", text)
+    fixed = []
+    for sent in sentences:
+        if not sent.strip():
+            continue
+        twords = sent.split()
+        out = []
+        for i, w in enumerate(twords):
+            # Strip punctuation for matching
+            clean = w.strip(".,;:!?"'()[]")
+            low   = clean.lower()
+            if low in proper:
+                # Restore proper casing
+                if low in {"ai", "ceo", "cfo", "coo", "cto", "us", "eu", "uk",
+                           "usd", "eur", "gbp", "zar", "cny", "krw", "jpy",
+                           "q1", "q2", "q3", "q4", "fy", "cy", "ytd", "arr",
+                           "gpu", "ipo", "aws", "azure", "gcp", "llm", "etf",
+                           "ebitda", "eps", "nasdaq", "s&p"}:
+                    out.append(w.replace(clean, clean.upper()))
+                else:
+                    out.append(w.replace(clean, clean.capitalize()))
+            elif i == 0:
+                out.append(w[0].upper() + w[1:].lower() if len(w) > 1 else w.upper())
+            else:
+                out.append(w.lower())
+        fixed.append(" ".join(out))
+    return "  ".join(fixed)
+
+
 def summarise(article: dict) -> str:
     """Summarise a single article or a merged group of articles."""
-    # Fetch full text for all links in the group
     links  = article.get("links", [article["link"]])
     titles = article.get("titles", [article["title"]])
 
     combined_text = ""
     for title, link in zip(titles, links):
         body = fetch_full_text(link) if link else ""
-        combined_text += f"\n\n--- Source: {article.get('source', '')} | Title: {title} ---\n"
+        combined_text += "\n\n--- Source: {} | Title: {} ---\n".format(
+            article.get("source", ""), title
+        )
         combined_text += body if body else article.get("summary", "")
 
-    content = f"Company/topic: {article['title']}\n"
+    prompt_content = "Company/topic: {}\n".format(article["title"])
     if len(titles) > 1:
-        content += f"Note: {len(titles)} sources cover this story — synthesise into one summary.\n"
-    content += combined_text.strip()
+        prompt_content += "Note: {} sources cover this story — synthesise into one summary.\n".format(len(titles))
+    prompt_content += combined_text.strip()
 
     payload = {
         "model": "llama-3.3-70b-versatile",
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": content},
+            {"role": "user",   "content": prompt_content},
         ],
         "max_tokens": 600,
         "temperature": 0.3,
@@ -718,29 +778,31 @@ def summarise(article: dict) -> str:
                 GROQ_URL,
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {GROQ_KEY}",
+                    "Authorization": "Bearer {}".format(GROQ_KEY),
                 },
                 data=json.dumps(payload),
                 timeout=30,
             )
             if resp.status_code == 429:
                 wait = 60 * (attempt + 1)
-                print(f"    Groq rate limit hit — waiting {wait}s before retry...")
+                print("    Groq rate limit hit — waiting {}s before retry...".format(wait))
                 time.sleep(wait)
                 continue
             resp.raise_for_status()
             text = resp.json()["choices"][0]["message"]["content"].strip()
             # Enforce ISO currency — replace any $ with USD
             import re as _re
-            text = _re.sub(r'\$\s*([0-9])', r'USD', text)
-            text = _re.sub(r'\$\s*([a-zA-Z])', r'USD ', text)
+            text = _re.sub(r"[$]([0-9])", r"USD", text)
+            text = _re.sub(r"[$]([a-zA-Z])", r"USD ", text)
+            # Fix Title Case if Groq ignores capitalisation rules
+            text = fix_capitalisation(text)
             return text
         except Exception as e:
             if attempt == 0:
-                print(f"    Groq error, retrying in 60s: {e}")
+                print("    Groq error, retrying in 60s: {}".format(e))
                 time.sleep(60)
             else:
-                return f"[Summary unavailable: {e}]"
+                return "[Summary unavailable: {}]".format(e)
     return "[Summary unavailable: max retries exceeded]"
 
 
