@@ -537,19 +537,31 @@ def fetch_articles() -> tuple[list[dict], list[dict]]:
     further_pool   = []
     cutoff         = get_cutoff()
 
-    # Supplement RSS with multiple additional sources
-    newsapi_articles    = fetch_newsapi(cutoff)
-    gdelt_articles      = fetch_gdelt(cutoff)
-    mediastack_articles = fetch_mediastack(cutoff)
-    rapidapi_articles   = fetch_rapidapi_reuters(cutoff)
-    scraped_articles    = scrape_reuters(cutoff)
+    # Fetch all supplementary sources in parallel
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    fetch_tasks = {
+        "newsapi":    lambda: fetch_newsapi(cutoff),
+        "gdelt":      lambda: fetch_gdelt(cutoff),
+        "mediastack": lambda: fetch_mediastack(cutoff),
+        "rapidapi":   lambda: fetch_rapidapi_reuters(cutoff),
+        "scrape":     lambda: scrape_reuters(cutoff),
+    }
+    supplementary = []
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(fn): name for name, fn in fetch_tasks.items()}
+        for future in as_completed(futures):
+            try:
+                supplementary.extend(future.result())
+            except Exception as e:
+                print(f"  Source error ({futures[future]}): {e}")
 
-    all_entries = []
-    for a in newsapi_articles + gdelt_articles + mediastack_articles + rapidapi_articles + scraped_articles:
-        all_entries.append(a)
+    all_entries = list(supplementary)
 
-    for source, url in FEEDS:
-        feed = feedparser.parse(url)
+    # Fetch all RSS feeds in parallel then process sequentially
+    with ThreadPoolExecutor(max_workers=min(len(FEEDS), 8)) as _ex:
+        _feeds = list(_ex.map(lambda su: (su[0], feedparser.parse(su[1])), FEEDS))
+
+    for source, feed in _feeds:
         for entry in feed.entries:
             published = None
             if hasattr(entry, "published_parsed") and entry.published_parsed:
