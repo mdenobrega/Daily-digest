@@ -19,6 +19,7 @@ GROQ_KEY          = os.environ["GROQ_API_KEY"]
 GROQ_URL          = "https://api.groq.com/openai/v1/chat/completions"
 NEWS_API_KEY      = os.environ.get("NEWS_API_KEY", "")       # optional — NewsAPI free tier
 MEDIASTACK_KEY    = os.environ.get("MEDIASTACK_API_KEY", "") # optional — Mediastack free tier
+RAPIDAPI_KEY      = os.environ.get("RAPIDAPI_KEY", "")       # optional — Reuters RapidAPI
 
 SAST  = timezone(timedelta(hours=2))
 TODAY = datetime.now(SAST).strftime("%A, %d %B %Y")
@@ -369,6 +370,65 @@ def fetch_mediastack(cutoff: datetime) -> list[dict]:
         return []
 
 
+def fetch_rapidapi_reuters(cutoff: datetime) -> list[dict]:
+    """Fetch Reuters articles via RapidAPI Reuters Business and Financial News.
+    Uses date-range endpoint to pull articles from the cutoff date to today."""
+    if not RAPIDAPI_KEY:
+        return []
+    try:
+        now_sast    = datetime.now(SAST)
+        cutoff_sast = cutoff.astimezone(SAST)
+        date_from   = cutoff_sast.strftime("%Y-%m-%d")
+        date_to     = now_sast.strftime("%Y-%m-%d")
+
+        headers = {
+            "Content-Type":  "application/json",
+            "x-rapidapi-host": "reuters-business-and-financial-news.p.rapidapi.com",
+            "x-rapidapi-key":  RAPIDAPI_KEY,
+        }
+
+        articles = []
+        # Fetch up to 3 pages of 20 articles each
+        for offset in [0, 20, 40]:
+            url  = f"https://reuters-business-and-financial-news.p.rapidapi.com/get-articles-between-dates/{date_from}/{date_to}/{offset}/20"
+            resp = requests.get(url, headers=headers, timeout=15)
+            if resp.status_code == 429:
+                print("  RapidAPI rate limit hit — skipping remaining pages.")
+                break
+            resp.raise_for_status()
+            data = resp.json()
+            batch = data.get("articles", data) if isinstance(data, dict) else data
+            if not batch:
+                break
+            for a in batch:
+                published = None
+                pub_str   = a.get("publishedAt") or a.get("published_date") or a.get("date", "")
+                if pub_str:
+                    for fmt in ["%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+                        try:
+                            published = datetime.strptime(pub_str[:19], fmt[:len(pub_str[:19])]).replace(tzinfo=timezone.utc)
+                            break
+                        except Exception:
+                            continue
+                if published and published < cutoff:
+                    continue
+                title = a.get("title") or a.get("headline", "")
+                articles.append({
+                    "source":    "Reuters",
+                    "title":     title,
+                    "summary":   a.get("description") or a.get("summary", ""),
+                    "link":      a.get("url") or a.get("link", ""),
+                    "published": published,
+                })
+            time.sleep(1)  # be polite between pages
+
+        print(f"  RapidAPI Reuters: found {len(articles)} articles.")
+        return articles
+    except Exception as e:
+        print(f"  RapidAPI Reuters error: {e}")
+        return []
+
+
 def scrape_reuters(cutoff: datetime) -> list[dict]:
     """Scrape Reuters technology and business section pages directly.
     Catches articles that miss the RSS feed or NewsAPI delay."""
@@ -435,10 +495,11 @@ def fetch_articles() -> tuple[list[dict], list[dict]]:
     newsapi_articles    = fetch_newsapi(cutoff)
     gdelt_articles      = fetch_gdelt(cutoff)
     mediastack_articles = fetch_mediastack(cutoff)
+    rapidapi_articles   = fetch_rapidapi_reuters(cutoff)
     scraped_articles    = scrape_reuters(cutoff)
 
     all_entries = []
-    for a in newsapi_articles + gdelt_articles + mediastack_articles + scraped_articles:
+    for a in newsapi_articles + gdelt_articles + mediastack_articles + rapidapi_articles + scraped_articles:
         all_entries.append(a)
 
     for source, url in FEEDS:
