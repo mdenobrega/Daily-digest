@@ -127,6 +127,10 @@ EXCLUDE_ALWAYS = [
     "pitch competition", "accelerator", "hackathon",
     # Travel/visit pieces without operational news
     "food watch", "tracking website",
+    # Entertainment / gaming — not relevant to TMT financials
+    "launches in", "game launch", "release date", "early access",
+    "premium edition", "xbox game", "playstation", "nintendo",
+    "film", "movie", "season 2", "season 3", "tv show",
     # CEO personal wealth
     "net worth", "billionaire", "richest person", "wealthiest",
     "sail past", "surpasses", "fortune grows",
@@ -396,28 +400,38 @@ def fetch_rapidapi_reuters(cutoff: datetime) -> list[dict]:
                 print("  RapidAPI rate limit hit — skipping remaining pages.")
                 break
             resp.raise_for_status()
-            data = resp.json()
-            batch = data.get("articles", data) if isinstance(data, dict) else data
+            data  = resp.json()
+            # API returns items[] array per documentation
+            batch = data.get("items") or data.get("articles") or data.get("data") or []
+            if isinstance(data, list):
+                batch = data
             if not batch:
                 break
             for a in batch:
                 published = None
-                pub_str   = a.get("publishedAt") or a.get("published_date") or a.get("date", "")
+                pub_str   = (a.get("publishedAt") or a.get("published_date") or
+                             a.get("date") or a.get("pubDate") or "")
                 if pub_str:
-                    for fmt in ["%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+                    for fmt in ["%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S",
+                                "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
                         try:
-                            published = datetime.strptime(pub_str[:19], fmt[:len(pub_str[:19])]).replace(tzinfo=timezone.utc)
+                            published = datetime.strptime(
+                                pub_str[:len(fmt)].strip(), fmt
+                            ).replace(tzinfo=timezone.utc)
                             break
                         except Exception:
                             continue
                 if published and published < cutoff:
                     continue
-                title = a.get("title") or a.get("headline", "")
+                title = a.get("title") or a.get("headline") or a.get("name", "")
+                if not title:
+                    continue
                 articles.append({
                     "source":    "Reuters",
                     "title":     title,
-                    "summary":   a.get("description") or a.get("summary", ""),
-                    "link":      a.get("url") or a.get("link", ""),
+                    "summary":   (a.get("description") or a.get("summary") or
+                                  a.get("abstract", "")),
+                    "link":      a.get("url") or a.get("link") or a.get("canonicalUrl", ""),
                     "published": published,
                 })
             time.sleep(1)  # be polite between pages
@@ -582,8 +596,11 @@ IMPORTANT REQUIREMENTS
 ---
 
 FORMATTING — follow exactly:
-- Sentence case. Every sentence starts with a capital letter. All proper nouns and company names capitalised (Nvidia, Meta, Amazon, AI, CEO).
+- Sentence case ONLY. Only the first word of each sentence and proper nouns get capitals. NEVER capitalise every word like title case — "Openai Is In Talks" is wrong; "OpenAI is in talks" is correct.
 - Double space after every sentence.
+- Maximum 20 words per sentence. Count carefully and split any sentence over 20 words.
+- Do not speculate. Only report what the article explicitly states. Never write "may", "could", "might", "potential" unless directly quoting the article.
+- Do not pad. One tight paragraph is better than two vague ones.
 - Use "US" not "U.S".
 - bn = billion, m = million, tn = trillion, k = thousand.
 - Spaces in thousands: "10 000" not "10,000".
