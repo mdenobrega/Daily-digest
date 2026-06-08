@@ -15,9 +15,10 @@ from bs4 import BeautifulSoup
 from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
-GROQ_KEY     = os.environ["GROQ_API_KEY"]
-GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
-NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "")  # optional — NewsAPI free tier
+GROQ_KEY          = os.environ["GROQ_API_KEY"]
+GROQ_URL          = "https://api.groq.com/openai/v1/chat/completions"
+NEWS_API_KEY      = os.environ.get("NEWS_API_KEY", "")       # optional — NewsAPI free tier
+MEDIASTACK_KEY    = os.environ.get("MEDIASTACK_API_KEY", "") # optional — Mediastack free tier
 
 SAST  = timezone(timedelta(hours=2))
 TODAY = datetime.now(SAST).strftime("%A, %d %B %Y")
@@ -272,6 +273,102 @@ def fetch_newsapi(cutoff: datetime) -> list[dict]:
         return []
 
 
+def fetch_gdelt(cutoff: datetime) -> list[dict]:
+    """Fetch tech/AI news from GDELT — free, no API key required.
+    Queries the GDELT DOC 2.0 API for recent Reuters and major tech news."""
+    try:
+        # GDELT DOC API — queries last 24h of news
+        params = {
+            "query":      "reuters technology AI earnings acquisition layoffs",
+            "mode":       "artlist",
+            "maxrecords": 75,
+            "format":     "json",
+            "timespan":   "1d",
+            "sort":       "datedesc",
+        }
+        resp = requests.get(
+            "https://api.gdeltproject.org/api/v2/doc/doc",
+            params=params,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        articles = []
+        for a in data.get("articles", []):
+            published = None
+            if a.get("seendate"):
+                try:
+                    published = datetime.strptime(
+                        a["seendate"], "%Y%m%dT%H%M%SZ"
+                    ).replace(tzinfo=timezone.utc)
+                except Exception:
+                    pass
+            if published and published < cutoff:
+                continue
+            articles.append({
+                "source":    a.get("domain", "GDELT"),
+                "title":     a.get("title", ""),
+                "summary":   "",
+                "link":      a.get("url", ""),
+                "published": published,
+            })
+        print(f"  GDELT: found {len(articles)} articles.")
+        return articles
+    except Exception as e:
+        print(f"  GDELT error: {e}")
+        return []
+
+
+def fetch_mediastack(cutoff: datetime) -> list[dict]:
+    """Fetch Reuters and tech news via Mediastack API (free tier)."""
+    if not MEDIASTACK_KEY:
+        return []
+    try:
+        params = {
+            "access_key": MEDIASTACK_KEY,
+            "sources":    "reuters,cnbc,techcrunch,the-verge,wsj",
+            "categories": "technology,business",
+            "languages":  "en",
+            "limit":      50,
+            "sort":       "published_desc",
+        }
+        resp = requests.get(
+            "http://api.mediastack.com/v1/news",
+            params=params,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        articles = []
+        for a in resp.json().get("data", []):
+            published = None
+            if a.get("published_at"):
+                try:
+                    published = datetime.strptime(
+                        a["published_at"], "%Y-%m-%dT%H:%M:%S+%f"
+                    ).replace(tzinfo=timezone.utc)
+                except Exception:
+                    try:
+                        published = datetime.fromisoformat(
+                            a["published_at"].replace("Z", "+00:00")
+                        )
+                    except Exception:
+                        pass
+            if published and published < cutoff:
+                continue
+            articles.append({
+                "source":    a.get("source", "Mediastack"),
+                "title":     a.get("title", ""),
+                "summary":   a.get("description", ""),
+                "link":      a.get("url", ""),
+                "published": published,
+            })
+        print(f"  Mediastack: found {len(articles)} articles.")
+        return articles
+    except Exception as e:
+        print(f"  Mediastack error: {e}")
+        return []
+
+
 def scrape_reuters(cutoff: datetime) -> list[dict]:
     """Scrape Reuters technology and business section pages directly.
     Catches articles that miss the RSS feed or NewsAPI delay."""
@@ -334,16 +431,14 @@ def fetch_articles() -> tuple[list[dict], list[dict]]:
     further_pool   = []
     cutoff         = get_cutoff()
 
-    # Supplement RSS with NewsAPI Reuters articles
-    newsapi_articles = fetch_newsapi(cutoff)
-
-    # Supplement with direct Reuters scrape
-    scraped_articles = scrape_reuters(cutoff)
+    # Supplement RSS with multiple additional sources
+    newsapi_articles    = fetch_newsapi(cutoff)
+    gdelt_articles      = fetch_gdelt(cutoff)
+    mediastack_articles = fetch_mediastack(cutoff)
+    scraped_articles    = scrape_reuters(cutoff)
 
     all_entries = []
-    for a in newsapi_articles:
-        all_entries.append(a)
-    for a in scraped_articles:
+    for a in newsapi_articles + gdelt_articles + mediastack_articles + scraped_articles:
         all_entries.append(a)
 
     for source, url in FEEDS:
