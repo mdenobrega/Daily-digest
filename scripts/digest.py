@@ -410,74 +410,61 @@ def fetch_rapidapi_reuters(cutoff: datetime) -> list[dict]:
         }
 
         articles = []
-        # Fetch up to 3 pages of 20 articles each
-        for offset in [0, 20, 40]:
-            url  = f"https://reuters-business-and-financial-news.p.rapidapi.com/get-articles-between-dates/{date_from}/{date_to}/{offset}/20"
-            print(f"  RapidAPI request: {url}")
-            resp = requests.get(url, headers=headers, timeout=15)
-            print(f"  RapidAPI status: {resp.status_code}")
-            if resp.status_code == 429:
-                print("  RapidAPI rate limit hit — skipping remaining pages.")
-                break
-            resp.raise_for_status()
-            data  = resp.json()
-            # API returns articles[] array with nested publishedAt object
-            batch = data.get("articles") or data.get("items") or data.get("data") or []
-            if isinstance(data, list):
-                batch = data
-            if not batch:
-                break
-            for a in batch:
-                published = None
-                # publishedAt is a nested object: {"date": "2026-05-01 00:02:27.000000", ...}
-                pub_obj = a.get("publishedAt") or {}
-                if isinstance(pub_obj, dict):
-                    pub_str = pub_obj.get("date", "")
-                elif isinstance(pub_obj, str):
-                    pub_str = pub_obj
-                else:
-                    pub_str = ""
-                if pub_str:
-                    for fmt in ["%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S",
-                                "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"]:
-                        try:
-                            published = datetime.strptime(
-                                pub_str[:26].strip(), fmt
-                            ).replace(tzinfo=timezone.utc)
-                            break
-                        except Exception:
-                            continue
-                if published and published < cutoff:
+        # Fetch from tech/business category endpoints specifically
+        # Category IDs from API: 238=Business, 243=Technology, 260=Media&Telecom,
+        # 374=China, 254=Retail&Consumer, 381=Aerospace&Defense
+        category_ids = [243, 238, 260, 374]
+
+        def parse_article(a, cutoff):
+            pub_obj = a.get("publishedAt") or {}
+            pub_str = pub_obj.get("date", "") if isinstance(pub_obj, dict) else str(pub_obj)
+            published = None
+            if pub_str:
+                for fmt in ["%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S",
+                            "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"]:
+                    try:
+                        published = datetime.strptime(
+                            pub_str[:26].strip(), fmt
+                        ).replace(tzinfo=timezone.utc)
+                        break
+                    except Exception:
+                        continue
+            if published and published < cutoff:
+                return None
+            title = (a.get("articlesName") or a.get("title") or "")
+            if not title:
+                return None
+            summary = (a.get("articlesShortDescription") or a.get("description") or "")
+            link = a.get("url") or a.get("link") or ""
+            if not link:
+                supplier = a.get("urlSupplier") or a.get("canonicalSupplier", "")
+                if supplier:
+                    link = "https://www.reuters.com" + supplier
+            return {"source": "Reuters", "title": title,
+                    "summary": summary, "link": link, "published": published}
+
+        seen = set()
+        for cat_id in category_ids:
+            for offset in [0, 20]:
+                url = f"https://reuters-business-and-financial-news.p.rapidapi.com/get-articles-by-category-id/{cat_id}/{offset}/20"
+                print(f"  RapidAPI request: {url}")
+                resp = requests.get(url, headers=headers, timeout=15)
+                print(f"  RapidAPI status: {resp.status_code}")
+                if resp.status_code == 429:
+                    print("  RapidAPI rate limit — stopping.")
+                    break
+                if resp.status_code != 200:
                     continue
-                # Skip pure sports/lifestyle — keep everything business/tech adjacent
-                cat = (a.get("categoryName") or "").lower()
-                hard_skip = {"sports", "basketball", "baseball", "football", "golf",
-                             "tennis", "soccer", "rugby", "hockey", "racing",
-                             "lifestyle", "entertainment", "culture"}
-                if any(s in cat for s in hard_skip):
-                    continue
-                # Title field is articlesName
-                title = (a.get("articlesName") or a.get("title") or
-                         a.get("headline") or a.get("name", ""))
-                if not title:
-                    continue
-                # Summary field is articlesShortDescription
-                summary = (a.get("articlesShortDescription") or a.get("description") or
-                           a.get("summary") or a.get("abstract", ""))
-                # URL field is urlSupplier (relative) or canonicalSupplier
-                url = a.get("url") or a.get("link") or ""
-                if not url:
-                    supplier = a.get("urlSupplier") or a.get("canonicalSupplier", "")
-                    if supplier:
-                        url = "https://www.reuters.com" + supplier
-                articles.append({
-                    "source":    "Reuters",
-                    "title":     title,
-                    "summary":   summary,
-                    "link":      url,
-                    "published": published,
-                })
-            time.sleep(1)  # be polite between pages
+                data  = resp.json()
+                batch = data.get("articles") or data.get("items") or []
+                if isinstance(data, list):
+                    batch = data
+                for a in batch:
+                    art = parse_article(a, cutoff)
+                    if art and art["title"] not in seen:
+                        seen.add(art["title"])
+                        articles.append(art)
+                time.sleep(0.5)
 
         print(f"  RapidAPI Reuters: found {len(articles)} articles.")
         if len(articles) > 0:
