@@ -480,15 +480,9 @@ def fetch_rapidapi_reuters(cutoff: datetime) -> list[dict]:
             time.sleep(1)  # be polite between pages
 
         print(f"  RapidAPI Reuters: found {len(articles)} articles.")
-        if len(articles) == 0:
-            # Debug: show what came back
-            try:
-                data_sample = resp.json()
-                total = data_sample.get("countArticles", "?")
-                sample_cats = [a.get("categoryName","?") for a in data_sample.get("articles",[])[:5]]
-                print(f"  RapidAPI debug: countArticles={total}, sample categories={sample_cats}")
-            except Exception:
-                print(f"  RapidAPI raw (500): {resp.text[:500]}")
+        if len(articles) > 0:
+            sample = [a["title"][:60] for a in articles[:5]]
+            print(f"  RapidAPI sample titles: {sample}")
         return articles
     except Exception as e:
         print(f"  RapidAPI Reuters error: {e}")
