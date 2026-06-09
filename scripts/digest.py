@@ -2,12 +2,13 @@
 Daily Tech & AI News Digest
 Fetches top tech/AI headlines from Reuters, CNBC, FT RSS feeds,
 splits into company-specific summaries and thematic further reading,
-summarises via Google Gemini API, writes a clean HTML page for GitHub Pages.
+summarises via Groq API, writes a clean HTML page for GitHub Pages.
 """
 
 import os
 import time
 import feedparser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import json
 from datetime import datetime, timezone, timedelta
@@ -390,6 +391,17 @@ def fetch_rapidapi_reuters(cutoff: datetime) -> list[dict]:
         cutoff_sast = cutoff.astimezone(SAST)
         date_from   = cutoff_sast.strftime("%Y-%m-%d")
         date_to     = now_sast.strftime("%Y-%m-%d")
+        # Ensure at least a 2-day window — API needs overlap to find articles
+        from_dt = datetime.strptime(date_from, "%Y-%m-%d")
+        to_dt   = datetime.strptime(date_to,   "%Y-%m-%d")
+        if (to_dt - from_dt).days < 2:
+            date_from = (from_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+        # Ensure at least a 2-day window so API returns results
+        from datetime import date as _date
+        if date_from == date_to:
+            from datetime import timedelta as _td
+            date_from = (now_sast - _td(days=1)).strftime("%Y-%m-%d")
+        print(f"  RapidAPI date range: {date_from} to {date_to}")
 
         headers = {
             "Content-Type":  "application/json",
@@ -551,7 +563,6 @@ def fetch_articles() -> tuple[list[dict], list[dict]]:
     cutoff         = get_cutoff()
 
     # Fetch all supplementary sources in parallel
-    from concurrent.futures import ThreadPoolExecutor, as_completed
     fetch_tasks = {
         "newsapi":    lambda: fetch_newsapi(cutoff),
         "gdelt":      lambda: fetch_gdelt(cutoff),
