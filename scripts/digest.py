@@ -44,6 +44,8 @@ FEEDS = [
     ("The Verge",   "https://www.theverge.com/rss/index.xml"),
     # WSJ Tech
     ("WSJ",         "https://feeds.a.dj.com/rss/RSSWSJD.xml"),
+    # MyBroadband — SA tech news
+    ("MyBroadband", "https://mybroadband.co.za/news/feed"),
 ]
 
 # ── Keywords ──────────────────────────────────────────────────────────────────
@@ -154,6 +156,8 @@ EXCLUDE_SUMMARY = [
     # Interviews and profiles
     "sits down with", "in conversation with", "talks to", "speaks to",
     "interview:", "interview with", "q&a", "in his own words",
+    "ceo tells", "tells cnbc", "tells reuters", "tells ft",
+    "ceo says", "exec says", "chief says",
     # Predictions and outlooks
     "what to expect", "predictions for", "outlook for", "forecast for",
     "what lies ahead", "what's next for", "the future of", "looking ahead",
@@ -181,7 +185,7 @@ EXCLUDE_SUMMARY = [
     "tracks jensen", "follows jensen", "follows ceo",
 ]
 
-MAX_SUMMARIES = 10   # articles that get full summaries
+MAX_SUMMARIES = 6    # articles that get full summaries
 MAX_FURTHER   = 8    # articles in further reading
 
 
@@ -228,7 +232,7 @@ def is_duplicate(title: str, existing: list[dict]) -> bool:
 def fetch_full_text(url: str) -> str:
     try:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; NewsDigestBot/1.0)"}
-        resp    = requests.get(url, headers=headers, timeout=10)
+        resp    = requests.get(url, headers=headers, timeout=5)
         soup    = BeautifulSoup(resp.text, "html.parser")
         for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
             tag.decompose()
@@ -244,11 +248,12 @@ def fetch_newsapi(cutoff: datetime) -> list[dict]:
         return []
     try:
         params = {
-            "sources": "reuters",
-            "apiKey":  NEWS_API_KEY,
+            "q":        "nvidia OR apple OR microsoft OR google OR meta OR amazon OR openai OR anthropic OR AI earnings",
+            "apiKey":   NEWS_API_KEY,
             "pageSize": 50,
             "language": "en",
-            "from": cutoff.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "sortBy":   "publishedAt",
+            "from":     cutoff.strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
         resp = requests.get(
             "https://newsapi.org/v2/everything",
@@ -432,13 +437,12 @@ def fetch_rapidapi_reuters(cutoff: datetime) -> list[dict]:
                             continue
                 if published and published < cutoff:
                     continue
-                # Skip non-business/tech categories
+                # Skip pure sports/lifestyle — keep everything business/tech adjacent
                 cat = (a.get("categoryName") or "").lower()
-                skip_cats = {"sports", "basketball", "baseball", "football", "golf",
+                hard_skip = {"sports", "basketball", "baseball", "football", "golf",
                              "tennis", "soccer", "rugby", "hockey", "racing",
-                             "middle east", "government", "americas", "world",
-                             "asia pacific", "africa", "europe"}
-                if any(s in cat for s in skip_cats):
+                             "lifestyle", "entertainment", "culture"}
+                if any(s in cat for s in hard_skip):
                     continue
                 # Title field is articlesName
                 title = (a.get("articlesName") or a.get("title") or
@@ -464,14 +468,18 @@ def fetch_rapidapi_reuters(cutoff: datetime) -> list[dict]:
             time.sleep(1)  # be polite between pages
 
         print(f"  RapidAPI Reuters: found {len(articles)} articles.")
+        if len(articles) == 0:
+            # Debug: show what came back
+            try:
+                data_sample = resp.json()
+                total = data_sample.get("countArticles", "?")
+                sample_cats = [a.get("categoryName","?") for a in data_sample.get("articles",[])[:5]]
+                print(f"  RapidAPI debug: countArticles={total}, sample categories={sample_cats}")
+            except Exception:
+                print(f"  RapidAPI raw (500): {resp.text[:500]}")
         return articles
     except Exception as e:
         print(f"  RapidAPI Reuters error: {e}")
-        # Log raw response for debugging
-        try:
-            print(f"  RapidAPI raw response (first 500 chars): {resp.text[:500]}")
-        except Exception:
-            pass
         return []
 
 
@@ -481,8 +489,8 @@ def scrape_reuters(cutoff: datetime) -> list[dict]:
     pages = [
         "https://www.reuters.com/technology/",
         "https://www.reuters.com/business/",
-        "https://www.reuters.com/business/finance/",
         "https://www.reuters.com/technology/artificial-intelligence/",
+        "https://www.reuters.com/markets/companies/",
     ]
     articles = []
     seen_links = set()
@@ -501,9 +509,14 @@ def scrape_reuters(cutoff: datetime) -> list[dict]:
                 href = a_tag["href"]
                 if not href.startswith("/"):
                     continue
-                # Must look like a Reuters article path
+                # Must look like a Reuters article path with date
                 import re
-                if not re.search(r"/[0-9]{4}/[0-9]{2}/[0-9]{2}/", href):
+                if not re.search(r"/20[0-9]{2}/[0-9]{2}/[0-9]{2}/", href):
+                    continue
+                # Skip non-article paths
+                skip_paths = ["/video/", "/graphics/", "/pictures/", "/author/",
+                              "/tag/", "/section/", "/markets/companies/"]
+                if any(p in href for p in skip_paths):
                     continue
 
                 full_url = "https://www.reuters.com" + href.split("?")[0]
@@ -657,7 +670,7 @@ FORMATTING — follow exactly:
 - Use "c." for approximate values.
 - Dates: 15 Sep '26. FY '26. CY '26. YTD. y/y. q/q.
 - Ratings in full capitals: OUTPERFORM, UNDERPERFORM, MARKET PERFORM.
-- No bullet points. No repeated information.
+- No bullet points. No repeated information. Never start consecutive sentences with the same subject. Never repeat the company name more than twice per paragraph.
 - Replace "increased" with "rose". Replace "decreased" with "fell".
 - Do not use "while the" — start a new sentence instead.
 - Maximum 20 words per sentence.
@@ -793,13 +806,17 @@ def summarise(article: dict) -> str:
     links  = article.get("links", [article["link"]])
     titles = article.get("titles", [article["title"]])
 
-    combined_text = ""
-    for title, link in zip(titles, links):
-        body = fetch_full_text(link) if link else ""
-        combined_text += "\n\n--- Source: {} | Title: {} ---\n".format(
-            article.get("source", ""), title
-        )
-        combined_text += body if body else article.get("summary", "")
+    # Use prefetched content if available, otherwise fetch now
+    if article.get("_prefetched"):
+        combined_text = article["_prefetched"]
+    else:
+        combined_text = ""
+        for title, link in zip(titles, links):
+            body = fetch_full_text(link) if link else ""
+            combined_text += "\n\n--- Source: {} | Title: {} ---\n".format(
+                article.get("source", ""), title
+            )
+            combined_text += body if body else article.get("summary", "")
 
     prompt_content = "Company/topic: {}\n".format(article["title"])
     if len(titles) > 1:
@@ -1099,13 +1116,31 @@ def main():
     if saved > 0:
         print(f"  Grouped into {len(grouped)} stories (saved {saved} API calls).")
 
+    # Pre-fetch full article text in parallel before Groq calls
+    print("  Pre-fetching article content...")
+    def _prefetch(article):
+        links  = article.get("links", [article["link"]])
+        titles = article.get("titles", [article["title"]])
+        texts  = []
+        with ThreadPoolExecutor(max_workers=len(links)) as ex:
+            fetched = list(ex.map(lambda l: fetch_full_text(l) if l else "", links))
+        for title, body in zip(titles, fetched):
+            texts.append("\n\n--- Source: {} | Title: {} ---\n{}".format(
+                article.get("source", ""), title, body or article.get("summary", "")
+            ))
+        article["_prefetched"] = "\n".join(texts)
+        return article
+
+    with ThreadPoolExecutor(max_workers=len(grouped)) as ex:
+        grouped = list(ex.map(_prefetch, grouped))
+
     summaries = []
     for i, article in enumerate(grouped, 1):
         src_list = ", ".join(article.get("sources", [article["source"]]))
         print(f"  Summarising {i}/{len(grouped)} [{src_list}]: {article['title'][:50]}...")
         summaries.append(summarise(article))
         if i < len(grouped):
-            time.sleep(8)   # avoid Groq free tier rate limit
+            time.sleep(4)   # avoid Groq free tier rate limit
 
     html = build_html(grouped, summaries, further)
 
