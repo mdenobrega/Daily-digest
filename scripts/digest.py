@@ -54,6 +54,9 @@ FEEDS = [
 # Broad company signal — catches any named company in a tech/AI/finance context.
 # Kept intentionally wide; the AI summariser and FINANCIAL_EVENTS filter do the
 # precision work. Add names here only if they are consistently missed.
+# Sources routed straight to Further Reading — never full summaries (paywalled)
+FURTHER_READING_ONLY_SOURCES = {"FT", "WSJ"}
+
 COMPANY_KEYWORDS = [
     # Big Tech & cloud
     "nvidia", "apple", "microsoft", "google", "alphabet", "meta", "amazon",
@@ -230,6 +233,41 @@ def is_duplicate(title: str, existing: list[dict]) -> bool:
     return any(a["title"].lower()[:60] == title.lower()[:60] for a in existing)
 
 
+def relevance_score(title: str, summary: str) -> int:
+    """Score articles by market relevance — higher = more important."""
+    text  = (title + " " + summary).lower()
+    score = 0
+
+    # Tier 1 companies — highest investor interest
+    tier1 = {"nvidia", "apple", "microsoft", "google", "alphabet", "meta",
+             "amazon", "tesla", "openai", "anthropic", "tsmc", "samsung",
+             "asml", "broadcom", "qualcomm", "spacex"}
+    if any(c in text for c in tier1):
+        score += 2
+
+    # Direct financial events — most market-moving
+    financial = {"earnings", "results", "revenue", "eps", "guidance",
+                 "profit", "loss", "margin", "raised", "beat", "miss"}
+    if any(f in text for f in financial):
+        score += 3
+
+    # Major corporate events
+    corporate = {"acquisition", "acquires", "merger", "ipo", "layoffs",
+                 "cuts jobs", "funding", "valuation", "buyback", "dividend"}
+    if any(c in text for c in corporate):
+        score += 2
+
+    # AI and chips — high relevance for TMT
+    if any(k in text for k in {"ai", "chip", "semiconductor", "llm", "gpu"}):
+        score += 1
+
+    # Share price reaction — confirms market significance
+    if any(k in text for k in {"shares", "stock", "rose", "fell", "surged", "plunged"}):
+        score += 1
+
+    return score
+
+
 def fetch_full_text(url: str) -> str:
     try:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; NewsDigestBot/1.0)"}
@@ -386,6 +424,9 @@ def fetch_rapidapi_reuters(cutoff: datetime) -> list[dict]:
     Uses date-range endpoint to pull articles from the cutoff date to today."""
     if not RAPIDAPI_KEY:
         return []
+    # Disabled — RapidAPI free tier only 30 calls/month (insufficient for daily use)
+    # Re-enable by removing the return [] below once on a paid plan
+    return []
     try:
         now_sast    = datetime.now(SAST)
         cutoff_sast = cutoff.astimezone(SAST)
@@ -584,6 +625,13 @@ def fetch_articles() -> tuple[list[dict], list[dict]]:
                        "published": published}
 
             # Tier 1: company-specific + financial event + not soft → full summary
+            # Paywalled sources go straight to further reading
+            if source in FURTHER_READING_ONLY_SOURCES:
+                if (has_company(text) or has_thematic(text)) and article["link"]:
+                    if not is_duplicate(title, further_pool) and                        not is_duplicate(title, summaries_pool):
+                        further_pool.append(article)
+                continue
+
             if has_company(text) and has_financial_event(text) and                not is_excluded_summary(title):
                 if not is_duplicate(title, summaries_pool):
                     summaries_pool.append(article)
