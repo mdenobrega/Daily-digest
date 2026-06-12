@@ -133,6 +133,11 @@ EXCLUDE_ALWAYS = [
     "pitch competition", "accelerator", "hackathon",
     # Travel/visit pieces without operational news
     "food watch", "tracking website",
+    # Sports events / non-business content
+    "comrades", "marathon", "drone warning",
+    # Named TV personalities / opinion shows
+    "jim cramer", "cramer says", "cramer warns", "mad money",
+    "fast money", "squawk box", "closing bell",
     # Entertainment / gaming — not relevant to TMT financials
     "game launch", "video game", "early access", "xbox game", "xbox series",
     "playstation", "nintendo", "forza", "fable", "halo", "call of duty",
@@ -162,6 +167,10 @@ EXCLUDE_SUMMARY = [
     "interview:", "interview with", "q&a", "in his own words",
     "ceo tells", "tells cnbc", "tells reuters", "tells ft",
     "ceo says", "exec says", "chief says",
+    # Analyst/investor opinion pieces
+    "cramer", "jim cramer", "analyst warns", "analyst says",
+    "investors warn", "wall street warns", "could soar", "could plunge",
+    "retail ipo", "ipo allocation", "ipo cut",
     # Predictions and outlooks
     "what to expect", "predictions for", "outlook for", "forecast for",
     "what lies ahead", "what's next for", "the future of", "looking ahead",
@@ -448,11 +457,6 @@ def fetch_rapidapi_reuters(cutoff: datetime) -> list[dict]:
         }
 
         articles = []
-        # Fetch from tech/business category endpoints specifically
-        # Category IDs from API: 238=Business, 243=Technology, 260=Media&Telecom,
-        # 374=China, 254=Retail&Consumer, 381=Aerospace&Defense
-        category_ids = [243, 238, 260, 374]
-
         def parse_article(a, cutoff):
             pub_obj = a.get("publishedAt") or {}
             pub_str = pub_obj.get("date", "") if isinstance(pub_obj, dict) else str(pub_obj)
@@ -482,27 +486,28 @@ def fetch_rapidapi_reuters(cutoff: datetime) -> list[dict]:
                     "summary": summary, "link": link, "published": published}
 
         seen = set()
-        for cat_id in category_ids:
-            for offset in [0, 20]:
-                url = f"https://reuters-business-and-financial-news.p.rapidapi.com/get-articles-by-category-id/{cat_id}/{offset}/20"
-                print(f"  RapidAPI request: {url}")
-                resp = requests.get(url, headers=headers, timeout=15)
-                print(f"  RapidAPI status: {resp.status_code}")
-                if resp.status_code == 429:
-                    print("  RapidAPI rate limit — stopping.")
-                    break
-                if resp.status_code != 200:
-                    continue
-                data  = resp.json()
-                batch = data.get("articles") or data.get("items") or []
-                if isinstance(data, list):
-                    batch = data
-                for a in batch:
-                    art = parse_article(a, cutoff)
-                    if art and art["title"] not in seen:
-                        seen.add(art["title"])
-                        articles.append(art)
-                time.sleep(0.5)
+        for offset in [0, 20, 40, 60]:
+            url = f"https://reuters-business-and-financial-news.p.rapidapi.com/get-articles-between-dates/{date_from}/{date_to}/{offset}/20"
+            print(f"  RapidAPI request: {url}")
+            resp = requests.get(url, headers=headers, timeout=15)
+            print(f"  RapidAPI status: {resp.status_code}")
+            if resp.status_code == 429:
+                print("  RapidAPI rate limit — stopping.")
+                break
+            if resp.status_code != 200:
+                break
+            data  = resp.json()
+            batch = data.get("articles") or data.get("items") or []
+            if isinstance(data, list):
+                batch = data
+            if not batch:
+                break
+            for a in batch:
+                art = parse_article(a, cutoff)
+                if art and art["title"] not in seen:
+                    seen.add(art["title"])
+                    articles.append(art)
+            time.sleep(0.3)
 
         print(f"  RapidAPI Reuters: found {len(articles)} articles.")
         if len(articles) > 0:
