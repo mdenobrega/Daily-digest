@@ -424,9 +424,6 @@ def fetch_rapidapi_reuters(cutoff: datetime) -> list[dict]:
     Uses date-range endpoint to pull articles from the cutoff date to today."""
     if not RAPIDAPI_KEY:
         return []
-    # Disabled — RapidAPI free tier only 30 calls/month (insufficient for daily use)
-    # Re-enable by removing the return [] below once on a paid plan
-    return []
     try:
         now_sast    = datetime.now(SAST)
         cutoff_sast = cutoff.astimezone(SAST)
